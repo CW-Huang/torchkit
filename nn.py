@@ -20,6 +20,11 @@ from torch.nn.modules.utils import _pair
 # aliasing
 N_ = None
 
+
+delta = 1e-6
+softplus_ = nn.Softplus()
+softplus = lambda x: softplus_(x) + delta 
+
 class WNlinear(Module):
 
     def __init__(self, in_features, out_features, bias=True):
@@ -113,11 +118,11 @@ class _WNconvNd(Module):
         # weight – filters tensor (out_channels x in_channels/groups x kH x kW)
         if transposed:
             self.direction = Parameter(torch.Tensor(
-                in_channels, out_channels // groups, *kernel_size))
+                    in_channels, out_channels // groups, *kernel_size))
             self.scale = Parameter(torch.Tensor(in_channels))
         else:
             self.direction = Parameter(torch.Tensor(
-                out_channels, in_channels // groups, *kernel_size))
+                    out_channels, in_channels // groups, *kernel_size))
             self.scale = Parameter(torch.Tensor(out_channels))
         if bias:
             self.bias = Parameter(torch.Tensor(out_channels))
@@ -167,7 +172,7 @@ class WNconv2d(_WNconvNd):
     def forward(self, input):
         dir_ = self.direction
         direction = dir_.div(
-            dir_.pow(2).sum(1).sum(1).sum(1).sqrt()[:,N_,N_,N_])
+                dir_.pow(2).sum(1).sum(1).sum(1).sqrt()[:,N_,N_,N_])
         weight = self.scale[:,N_,N_,N_].mul(direction)
         return F.conv2d(input, weight, self.bias, self.stride,
                         self.padding, self.dilation, self.groups)
@@ -219,3 +224,34 @@ class ResLinear(nn.Module):
         out_nonlinear = self.dot_h1(h)
         out_skip = input if self.same_dim else self.dot_01(input)
         return out_nonlinear + out_skip
+
+
+class Reshape(nn.Module):
+    
+    def __init__(self, shape):
+        super(Reshape, self).__init__()
+        self.shape = shape
+        
+    def forward(self, input):
+        return input.view(self.shape)
+
+
+class Slice(nn.Module):
+    
+    def __init__(self, slc):
+        super(Slice, self).__init__()
+        self.slc = slc
+        
+    def forward(self, input):
+        return input.__getitem__(self.slc)
+        
+        
+class SliceFactory(object):
+    def __init__(self):
+        pass
+    
+    def __getitem__(self, slc):
+        return Slice(slc)
+slicer = SliceFactory()
+
+
