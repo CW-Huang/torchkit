@@ -24,13 +24,18 @@ N_ = None
 delta = 1e-6
 softplus_ = nn.Softplus()
 softplus = lambda x: softplus_(x) + delta 
+sigmoid_ = nn.Sigmoid()
+sigmoid = lambda x: sigmoid_(x) * (1-delta) + 0.5 * delta 
 
 class WNlinear(Module):
 
-    def __init__(self, in_features, out_features, bias=True):
+    def __init__(self, in_features, out_features, 
+                 bias=True, mask=None, norm=True):
         super(WNlinear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
+        self.mask = mask
+        self.norm = norm
         self.direction = Parameter(torch.Tensor(out_features, in_features))
         self.scale = Parameter(torch.Tensor(out_features))
         if bias:
@@ -47,15 +52,24 @@ class WNlinear(Module):
             self.bias.data.uniform_(-stdv, stdv)
 
     def forward(self, input):
-        dir_ = self.direction
-        direction = dir_.div(dir_.pow(2).sum(1).sqrt()[:,N_])
-        weight = self.scale[:,N_].mul(direction)
+        if self.norm:
+            dir_ = self.direction
+            direction = dir_.div(dir_.pow(2).sum(1).sqrt()[:,N_])
+            weight = self.scale[:,N_].mul(direction)
+        else:
+            weight = self.direction
+        if self.mask is not None:
+            weight = weight * self.mask
         return F.linear(input, weight, self.bias)
 
     def __repr__(self):
         return self.__class__.__name__ + '(' \
             + 'in_features=' + str(self.in_features) \
             + ', out_features=' + str(self.out_features) + ')'
+
+    def cuda(self):
+        self.mask = self.mask.cuda()
+        return super(WNlinear, self).cuda()
 
 
       

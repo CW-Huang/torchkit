@@ -31,7 +31,8 @@ def categorical_kl(q, p, logq=None, logp=None):
     return (q * (logq - logp)).sum(1)
     
     
-    
+def varify(x):
+    return torch.autograd.Variable(torch.from_numpy(x))
     
     
     
