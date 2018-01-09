@@ -11,6 +11,10 @@ import numpy as np
 
 import torch
 
+
+delta = 1e-5
+sigmoid = lambda x:torch.nn.functional.sigmoid(x) * (1-delta) + 0.5 * delta
+
 c = - 0.5 * np.log(2*np.pi)
 def log_normal(x, mean, log_var, eps=0.0001):
     return - (x-mean) ** 2 / (2. * torch.exp(log_var) + eps) - log_var/2. + c
