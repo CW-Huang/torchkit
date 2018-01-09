@@ -9,6 +9,7 @@ Created on Mon Dec 11 13:58:12 2017
 
 
 import math
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -24,13 +25,18 @@ N_ = None
 delta = 1e-6
 softplus_ = nn.Softplus()
 softplus = lambda x: softplus_(x) + delta 
+sigmoid_ = nn.Sigmoid()
+sigmoid = lambda x: sigmoid_(x) * (1-delta) + 0.5 * delta 
 
 class WNlinear(Module):
 
-    def __init__(self, in_features, out_features, bias=True):
+    def __init__(self, in_features, out_features, 
+                 bias=True, mask=None, norm=True):
         super(WNlinear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
+        self.mask = mask
+        self.norm = norm
         self.direction = Parameter(torch.Tensor(out_features, in_features))
         self.scale = Parameter(torch.Tensor(out_features))
         if bias:
@@ -47,15 +53,70 @@ class WNlinear(Module):
             self.bias.data.uniform_(-stdv, stdv)
 
     def forward(self, input):
-        dir_ = self.direction
-        direction = dir_.div(dir_.pow(2).sum(1).sqrt()[:,N_])
-        weight = self.scale[:,N_].mul(direction)
+        if self.norm:
+            dir_ = self.direction
+            direction = dir_.div(dir_.pow(2).sum(1).sqrt()[:,N_])
+            weight = self.scale[:,N_].mul(direction)
+        else:
+            weight = self.scale[:,N_].mul(self.direction)
+        if self.mask is not None:
+            weight = weight * self.mask
         return F.linear(input, weight, self.bias)
 
     def __repr__(self):
         return self.__class__.__name__ + '(' \
             + 'in_features=' + str(self.in_features) \
             + ', out_features=' + str(self.out_features) + ')'
+
+    def cuda(self):
+        if self.mask is not None:
+            self.mask = self.mask.cuda()
+        return super(WNlinear, self).cuda()
+
+
+
+class CWNlinear(Module):
+
+    def __init__(self, in_features, out_features, context_features,
+                 mask=None, norm=True):
+        super(CWNlinear, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.context_features = context_features
+        self.mask = mask
+        self.norm = norm
+        self.direction = Parameter(torch.Tensor(out_features, in_features))
+        self.cscale = WNlinear(context_features, out_features)
+        self.cbias = WNlinear(context_features, out_features)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        stdv = 1. / math.sqrt(self.direction.size(1))
+        self.direction.data.uniform_(-stdv, stdv)
+        
+    def forward(self, inputs):
+        input, context = inputs
+        scale = self.cscale(context)
+        bias = self.cbias(context)
+        if self.norm:
+            dir_ = self.direction
+            direction = dir_.div(dir_.pow(2).sum(1).sqrt()[:,N_])
+            weight = direction
+        else:
+            weight = self.direction
+        if self.mask is not None:
+            weight = weight * self.mask
+        return scale * F.linear(input, weight, None) + bias, context
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(' \
+            + 'in_features=' + str(self.in_features) \
+            + ', out_features=' + str(self.out_features) + ')'
+
+    def cuda(self):
+        if self.mask is not None:
+            self.mask = self.mask.cuda()
+        return super(WNlinear, self).cuda()
 
 
       
@@ -255,3 +316,56 @@ class SliceFactory(object):
 slicer = SliceFactory()
 
 
+class Lambda(nn.Module):
+    
+    def __init__(self, function):
+        super(Lambda, self).__init__()
+        self.function = function
+        
+    def forward(self, input):
+        return self.function(input)
+
+
+class SequentialFlow(nn.Sequential):
+    
+    def sample(self, n=1, context=None):
+        dim = self[0].dim
+        if isinstance(dim, int):
+            dim = [dim,]
+        
+        spl = torch.autograd.Variable(torch.FloatTensor(n,*dim).normal_())
+        lgd = torch.autograd.Variable(torch.from_numpy(
+            np.random.rand(n).astype('float32')))
+        if context is None:
+            context = torch.autograd.Variable(torch.from_numpy(
+            np.zeros((n,self[0].context_dim)).astype('float32')))
+            
+        if hasattr(self, 'gpu'):
+            if self.gpu:
+                spl = spl.cuda()
+                lgd = lgd.cuda()
+                context = context.gpu()
+        
+        return self.forward((spl, lgd, context))
+    
+    
+    
+    def cuda(self):
+        self.gpu = True
+        return super(SequentialFlow, self).cuda()
+
+
+
+
+if __name__ == '__main__':
+    
+    mdl = CWNlinear(2,5,3)
+    
+    
+    inp = torch.autograd.Variable(
+            torch.from_numpy(np.random.rand(2,2).astype('float32')))
+    con = torch.autograd.Variable(
+            torch.from_numpy(np.random.rand(2,3).astype('float32')))
+    
+    print mdl((inp, con))[0].size()
+    
