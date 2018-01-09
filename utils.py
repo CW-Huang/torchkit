@@ -13,7 +13,7 @@ import torch
 
 c = - 0.5 * np.log(2*np.pi)
 def log_normal(x, mean, log_var, eps=0.0001):
-    return - log_var/2. - (x-mean) ** 2 / (2. * torch.exp(log_var) + eps) + c
+    return - (x-mean) ** 2 / (2. * torch.exp(log_var) + eps) - log_var/2. + c
     
 def bceloss(pi, x):
     return - (x * torch.log(pi) + (1-x) * torch.log(1-pi))
@@ -33,7 +33,24 @@ def categorical_kl(q, p, logq=None, logp=None):
     
 def varify(x):
     return torch.autograd.Variable(torch.from_numpy(x))
-    
-    
-    
-    
+
+def oper(array,oper,axis=-1,keepdims=False):
+    a_oper = oper(array)
+    if keepdims:
+        shape = []
+        for j,s in enumerate(array.size()):
+            shape.append(s)
+        shape[axis] = -1
+        a_oper = a_oper.view(*shape)
+    return a_oper
+
+def log_sum_exp(A, axis=-1, sum_op=torch.sum):    
+    maximum = lambda x: x.max(axis)[0]    
+    A_max = oper(A,maximum,axis,True)
+    summation = lambda x: sum_op(torch.exp(x-A_max), axis)
+    B = torch.log(oper(A,summation,axis,True)) + A_max    
+    return B
+
+def log_mean_exp(A, axis=-1):
+    return log_sum_exp(A, axis, sum_op=torch.mean)
+
