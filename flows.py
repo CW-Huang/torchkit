@@ -62,7 +62,23 @@ class LinearFlow(BaseFlow):
         
         self.mean = oper(context_dim, dim)
         self.lstd = oper(context_dim, dim)
-        
+
+    def reset_parameters(self):
+        self.mean.dot_01.scale.data.uniform_(0.001, 0.001)
+        self.mean.dot_h1.scale.data.uniform_(0.001, 0.001)
+        self.mean.dot_01.bias.data.uniform_(0.001, 0.001)
+        self.mean.dot_h1.bias.data.uniform_(0.001, 0.001)
+        self.lstd.dot_01.scale.data.uniform_(0.001, 0.001)
+        self.lstd.dot_h1.scale.data.uniform_(0.001, 0.001)
+        if self.realify == nn_.softplus:
+            inv = np.log(np.exp(1-nn_.delta)-1) * 0.5
+            self.lstd.dot_01.bias.data.uniform_(inv-0.001, inv+0.001)
+            self.lstd.dot_h1.bias.data.uniform_(inv-0.001, inv+0.001)
+        else:
+            self.lstd.dot_01.bias.data.uniform_(0.001, 0.001)
+            self.lstd.dot_h1.bias.data.uniform_(0.001, 0.001)
+
+
     def forward(self, inputs):
         x, logdet, context = inputs
         mean = self.mean(context)

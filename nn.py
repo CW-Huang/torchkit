@@ -60,7 +60,8 @@ class WNlinear(Module):
         else:
             weight = self.scale[:,N_].mul(self.direction)
         if self.mask is not None:
-            weight = weight * self.mask
+            weight = weight * getattr(self.mask, 
+                                      ('cpu', 'cuda')[weight.is_cuda])()
         return F.linear(input, weight, self.bias)
 
     def __repr__(self):
@@ -68,10 +69,6 @@ class WNlinear(Module):
             + 'in_features=' + str(self.in_features) \
             + ', out_features=' + str(self.out_features) + ')'
 
-    def cuda(self):
-        if self.mask is not None:
-            self.mask = self.mask.cuda()
-        return super(WNlinear, self).cuda()
 
 
 
@@ -105,7 +102,8 @@ class CWNlinear(Module):
         else:
             weight = self.direction
         if self.mask is not None:
-            weight = weight * self.mask
+            weight = weight * getattr(self.mask,
+                                      ('cpu', 'cuda')[weight.is_cuda])()
         return scale * F.linear(input, weight, None) + bias, context
 
     def __repr__(self):
@@ -113,10 +111,6 @@ class CWNlinear(Module):
             + 'in_features=' + str(self.in_features) \
             + ', out_features=' + str(self.out_features) + ')'
 
-    def cuda(self):
-        if self.mask is not None:
-            self.mask = self.mask.cuda()
-        return super(WNlinear, self).cuda()
 
 
       

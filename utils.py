@@ -58,3 +58,12 @@ def log_sum_exp(A, axis=-1, sum_op=torch.sum):
 def log_mean_exp(A, axis=-1):
     return log_sum_exp(A, axis, sum_op=torch.mean)
 
+def log_sum_exp_np(A, axis=-1, sum_op=np.sum):    
+    A_max = np.max(A, axis, keepdims=True)
+    B = np.log(np.sum(np.exp(A-A_max),axis,keepdims=True)) + A_max    
+    return B
+
+def log_mean_exp_np(A, axis=-1):
+    return log_sum_exp_np(A, axis, sum_op=np.mean)
+    
+    
