@@ -12,7 +12,7 @@ import numpy as np
 import torch
 
 
-delta = 1e-5
+delta = 1e-7
 sigmoid = lambda x:torch.nn.functional.sigmoid(x) * (1-delta) + 0.5 * delta
 
 c = - 0.5 * np.log(2*np.pi)

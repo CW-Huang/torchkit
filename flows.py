@@ -62,21 +62,23 @@ class LinearFlow(BaseFlow):
         
         self.mean = oper(context_dim, dim)
         self.lstd = oper(context_dim, dim)
-
+        
+        self.reset_parameters()
+        
     def reset_parameters(self):
-        self.mean.dot_01.scale.data.uniform_(0.001, 0.001)
-        self.mean.dot_h1.scale.data.uniform_(0.001, 0.001)
-        self.mean.dot_01.bias.data.uniform_(0.001, 0.001)
-        self.mean.dot_h1.bias.data.uniform_(0.001, 0.001)
-        self.lstd.dot_01.scale.data.uniform_(0.001, 0.001)
-        self.lstd.dot_h1.scale.data.uniform_(0.001, 0.001)
+        self.mean.dot_01.scale.data.uniform_(-0.001, 0.001)
+        self.mean.dot_h1.scale.data.uniform_(-0.001, 0.001)
+        self.mean.dot_01.bias.data.uniform_(-0.001, 0.001)
+        self.mean.dot_h1.bias.data.uniform_(-0.001, 0.001)
+        self.lstd.dot_01.scale.data.uniform_(-0.001, 0.001)
+        self.lstd.dot_h1.scale.data.uniform_(-0.001, 0.001)
         if self.realify == nn_.softplus:
             inv = np.log(np.exp(1-nn_.delta)-1) * 0.5
             self.lstd.dot_01.bias.data.uniform_(inv-0.001, inv+0.001)
             self.lstd.dot_h1.bias.data.uniform_(inv-0.001, inv+0.001)
         else:
-            self.lstd.dot_01.bias.data.uniform_(0.001, 0.001)
-            self.lstd.dot_h1.bias.data.uniform_(0.001, 0.001)
+            self.lstd.dot_01.bias.data.uniform_(-0.001, 0.001)
+            self.lstd.dot_h1.bias.data.uniform_(-0.001, 0.001)
 
 
     def forward(self, inputs):
@@ -103,6 +105,17 @@ class IAF(BaseFlow):
         self.made = iaf_modules.cMADE(
                 dim, hid_dim, context_dim, num_layers, 2, activation)
        
+        self.reset_parameters()
+        
+    def reset_parameters(self):
+        self.made.hidden_to_output.cscale.weight.data.uniform_(-0.001, 0.001)
+        self.made.hidden_to_output.cscale.bias.data.uniform_(0.0, 0.0)
+        self.made.hidden_to_output.cbias.weight.data.uniform_(-0.001, 0.001)
+        self.made.hidden_to_output.cbias.bias.data.uniform_(0.0, 0.0)
+        if self.realify == nn_.softplus:
+            inv = np.log(np.exp(1-nn_.delta)-1) 
+            self.made.hidden_to_output.cbias.bias.data[1::2].uniform_(inv,inv)
+        
         
     def forward(self, inputs):
         x, logdet, context = inputs
@@ -171,11 +184,17 @@ class IAF_DSF(BaseFlow):
         
         self.made = iaf_modules.cMADE(
                 dim, hid_dim, context_dim, num_layers, 
-                3*num_ds_layers, activation)
+                3*(hid_dim/dim)*num_ds_layers, activation)
         
         self.out_to_dsparams = nn.Conv1d(
-                3*num_ds_layers, 3*num_ds_layers*num_ds_dim, 1)
+                3*(hid_dim/dim)*num_ds_layers, 3*num_ds_layers*num_ds_dim, 1)
         self.sf = SigmoidFlow()
+        
+        self.reset_parameters()
+        
+    def reset_parameters(self):
+        self.out_to_dsparams.weight.data.uniform_(-0.001, 0.001)
+        self.out_to_dsparams.bias.data.uniform_(0.0, 0.0)
         
     def forward(self, inputs):
         x, logdet, context = inputs
