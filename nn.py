@@ -27,6 +27,8 @@ softplus_ = nn.Softplus()
 softplus = lambda x: softplus_(x) + delta 
 sigmoid_ = nn.Sigmoid()
 sigmoid = lambda x: sigmoid_(x) * (1-delta) + 0.5 * delta 
+logsigmoid = lambda x: -softplus(-x)
+
 
 class WNlinear(Module):
 
@@ -86,13 +88,14 @@ class CWNlinear(Module):
         self.mask = mask
         self.norm = norm
         self.direction = Parameter(torch.Tensor(out_features, in_features))
-        self.cscale = WNlinear(context_features, out_features)
-        self.cbias = WNlinear(context_features, out_features)
+        self.cscale = nn.Linear(context_features, out_features)
+        self.cbias = nn.Linear(context_features, out_features)
         self.reset_parameters()
+        self.cscale.weight.data.normal_(0, 0.001)
+        self.cbias.weight.data.normal_(0, 0.001)
 
     def reset_parameters(self):
-        stdv = 1. / math.sqrt(self.direction.size(1))
-        self.direction.data.uniform_(-stdv, stdv)
+        self.direction.data.normal_(0, 0.001)
         
     def forward(self, inputs):
         input, context = inputs
