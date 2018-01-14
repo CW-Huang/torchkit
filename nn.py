@@ -28,8 +28,12 @@ softplus = lambda x: softplus_(x) + delta
 sigmoid_ = nn.Sigmoid()
 sigmoid = lambda x: sigmoid_(x) * (1-delta) + 0.5 * delta 
 logsigmoid = lambda x: -softplus(-x)
-
-
+def softmax(x, dim=-1):
+    e_x = torch.exp(x - x.max(dim=dim, keepdim=True)[0])
+    out = e_x / e_x.sum(dim=1, keepdim=True)
+    return out
+    
+    
 class WNlinear(Module):
 
     def __init__(self, in_features, out_features, 

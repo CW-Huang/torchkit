@@ -221,7 +221,7 @@ class SigmoidFlow(BaseFlow):
         
         self.act_a = lambda x: torch.exp(x) + nn_.delta
         self.act_b = lambda x: x
-        self.act_w = nn.Softmax(dim=2)
+        self.act_w = lambda x: nn_.softmax(x,dim=2)
         
     def forward(self, x, logdet, dsparams):
         
