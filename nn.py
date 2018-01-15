@@ -30,7 +30,7 @@ sigmoid = lambda x: sigmoid_(x) * (1-delta) + 0.5 * delta
 logsigmoid = lambda x: -softplus(-x)
 def softmax(x, dim=-1):
     e_x = torch.exp(x - x.max(dim=dim, keepdim=True)[0])
-    out = e_x / e_x.sum(dim=1, keepdim=True)
+    out = e_x / e_x.sum(dim=dim, keepdim=True)
     return out
     
     
