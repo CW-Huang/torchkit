@@ -41,7 +41,7 @@ class WNlinear(Module):
         super(WNlinear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
-        self.mask = mask
+        self.register_buffer('mask',mask)
         self.norm = norm
         self.direction = Parameter(torch.Tensor(out_features, in_features))
         self.scale = Parameter(torch.Tensor(out_features))
@@ -66,8 +66,9 @@ class WNlinear(Module):
         else:
             weight = self.scale[:,N_].mul(self.direction)
         if self.mask is not None:
-            weight = weight * getattr(self.mask, 
-                                      ('cpu', 'cuda')[weight.is_cuda])()
+            #weight = weight * getattr(self.mask, 
+            #                          ('cpu', 'cuda')[weight.is_cuda])()
+            weight = weight * self.mask
         return F.linear(input, weight, self.bias)
 
     def __repr__(self):
@@ -86,7 +87,7 @@ class CWNlinear(Module):
         self.in_features = in_features
         self.out_features = out_features
         self.context_features = context_features
-        self.mask = mask
+        self.register_buffer('mask',mask)
         self.norm = norm
         self.direction = Parameter(torch.Tensor(out_features, in_features))
         self.cscale = nn.Linear(context_features, out_features)
@@ -109,8 +110,9 @@ class CWNlinear(Module):
         else:
             weight = self.direction
         if self.mask is not None:
-            weight = weight * getattr(self.mask,
-                                      ('cpu', 'cuda')[weight.is_cuda])()
+            #weight = weight * getattr(self.mask,
+            #                          ('cpu', 'cuda')[weight.is_cuda])()
+            weight = weight * self.mask
         return scale * F.linear(input, weight, None) + bias, context
 
     def __repr__(self):

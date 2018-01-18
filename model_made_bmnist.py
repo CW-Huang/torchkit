@@ -31,9 +31,9 @@ logistic = lambda x: 1 / (torch.exp(-x)+1)
 class model(object):
     
     def __init__(self):
-        self.mdl = iaf_modules.MADE(784, 1000, 4, 1)
+        self.mdl = iaf_modules.MADE2(784, 512, 4, 1)
 
-        self.optim = optim.Adam(self.mdl.parameters(), lr=0.0005, 
+        self.optim = optim.Adam(self.mdl.parameters(), lr=0.001, 
                                 betas=(0.9, 0.999))
         
         trs = transforms.Compose([transforms.ToTensor()])
@@ -65,6 +65,7 @@ class model(object):
                          self.data_loader.dataset.__len__() // 32,
                          loss.data[0])
                  
+                self.mdl.randomize()
 
 mdl = model()
 mdl.train()
@@ -72,9 +73,15 @@ mdl.train()
 
 spl = utils.varify(np.random.randn(64,784).astype('float32'))
 
+ranks = (mdl.mdl.rx)
+ind = np.argsort(ranks)
 for i in range(784):
     
     out = mdl.mdl(spl)
-    spl[:,i] = torch.bernoulli(nn_.sigmoid(out[:,i]))
+    spl[:,ind[i]] = torch.bernoulli(nn_.sigmoid(out[:,ind[i]]))
 
-plt.imshow(nn_.sigmoid(out[5]).data.numpy().reshape(28,28), cmap='gray')
+plt.imshow(nn_.sigmoid(out[56]).data.numpy().reshape(28,28), cmap='gray')
+
+
+
+
