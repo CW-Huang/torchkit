@@ -151,7 +151,7 @@ tile = lambda x, r: np.tile(x,r).reshape(x.shape[0], x.shape[1]*r)
 
 def get_rank(max_rank, num_out):
     rank_out = np.array([])
-    while len(rank_out) <= num_out:
+    while len(rank_out) < num_out:
         rank_out = np.concatenate([rank_out, np.arange(max_rank)])
     excess = len(rank_out) - num_out
     remove_ind = np.random.choice(max_rank,excess,False)
@@ -207,7 +207,7 @@ class MADE(Module):
         
         
         ms, rx = get_masks(dim, hid_dim, num_layers, num_outlayers)
-        ms = map(utils.varify, ms)
+        ms = map(torch.from_numpy, ms)
         self.rx = rx
         
         sequels = list()
@@ -255,7 +255,7 @@ class cMADE(Module):
         
         
         ms, rx = get_masks(dim, hid_dim, num_layers, num_outlayers)
-        ms = map(utils.varify, ms)
+        ms = map(torch.from_numpy, ms)
         self.rx = rx
         
         sequels = list()
