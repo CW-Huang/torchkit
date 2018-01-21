@@ -17,6 +17,7 @@ from torch.nn import Module
 from torch.nn import functional as F
 from torch.nn.parameter import Parameter
 from torch.nn.modules.utils import _pair
+from torch.autograd import Variable
 
 # aliasing
 N_ = None
@@ -68,7 +69,7 @@ class WNlinear(Module):
         if self.mask is not None:
             #weight = weight * getattr(self.mask, 
             #                          ('cpu', 'cuda')[weight.is_cuda])()
-            weight = weight * self.mask
+            weight = weight * Variable(self.mask)
         return F.linear(input, weight, self.bias)
 
     def __repr__(self):
@@ -112,7 +113,7 @@ class CWNlinear(Module):
         if self.mask is not None:
             #weight = weight * getattr(self.mask,
             #                          ('cpu', 'cuda')[weight.is_cuda])()
-            weight = weight * self.mask
+            weight = weight * Variable(self.mask)
         return scale * F.linear(input, weight, None) + bias, context
 
     def __repr__(self):
