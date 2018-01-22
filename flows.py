@@ -173,7 +173,7 @@ class IAF_DSF(BaseFlow):
     
     def __init__(self, dim, hid_dim, context_dim, num_layers,
                  activation=nn.ELU(), realify=nn_.softplus,
-                 num_ds_dim=4, num_ds_layers=1):
+                 num_ds_dim=4, num_ds_layers=1, num_ds_multiplier=3):
         super(IAF_DSF, self).__init__()
         self.realify = realify
         
@@ -184,10 +184,11 @@ class IAF_DSF(BaseFlow):
         
         self.made = iaf_modules.cMADE(
                 dim, hid_dim, context_dim, num_layers, 
-                3*(hid_dim/dim)*num_ds_layers, activation)
+                num_ds_multiplier*(hid_dim/dim)*num_ds_layers, activation)
         
         self.out_to_dsparams = nn.Conv1d(
-                3*(hid_dim/dim)*num_ds_layers, 3*num_ds_layers*num_ds_dim, 1)
+                num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
+                3*num_ds_layers*num_ds_dim, 1)
         self.sf = SigmoidFlow()
         
         self.reset_parameters()
@@ -251,8 +252,84 @@ class SigmoidFlow(BaseFlow):
         
         
 
+class IAF_DDSF(BaseFlow):
+    
+    def __init__(self, dim, hid_dim, context_dim, num_layers,
+                 activation=nn.ELU(), realify=nn_.softplus,
+                 num_ds_dim=4, num_ds_layers=1, num_ds_multiplier=3):
+        super(IAF_DDSF, self).__init__()
+        self.realify = realify
+        
+        self.dim = dim
+        self.context_dim = context_dim
+        self.num_ds_dim = num_ds_dim
+        self.num_ds_layers = num_ds_layers
+        
+        self.made = iaf_modules.cMADE(
+                dim, hid_dim, context_dim, num_layers, 
+                num_ds_multiplier*(hid_dim/dim)*num_ds_layers, activation)
+        
+        self.out_to_dsparams = nn.Conv1d(
+                num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
+                3*num_ds_layers*num_ds_dim, 1)
+        self.sf = SigmoidFlow()
+        
+        self.reset_parameters()
+        
+    def reset_parameters(self):
+        self.out_to_dsparams.weight.data.uniform_(-0.001, 0.001)
+        self.out_to_dsparams.bias.data.uniform_(0.0, 0.0)
+        
+    def forward(self, inputs):
+        x, logdet, context = inputs
+        out, _ = self.made((x, context))
+        out = out.permute(0,2,1)
+        dsparams = self.out_to_dsparams(out).permute(0,2,1)
+        nparams = self.num_ds_dim*3
+        
+        h = x
+        for i in range(self.num_ds_layers):
+            params = dsparams[:,:,i*nparams:(i+1)*nparams]
+            h, logdet = self.sf(h, logdet, params)
+        
+        return h, logdet, context
 
 
+class DenseSigmoidFlow(BaseFlow):
+    
+    def __init__(self, num_ds_dim=4):
+        super(SigmoidFlow, self).__init__()
+        self.num_ds_dim = num_ds_dim
+        
+        self.act_a = lambda x: torch.exp(x) + nn_.delta
+        self.act_b = lambda x: x
+        self.act_w = lambda x: nn_.softmax(x,dim=2)
+        
+    def forward(self, x, logdet, dsparams):
+        
+        ndim = self.num_ds_dim
+        a = self.act_a(dsparams[:,:,0*ndim:1*ndim])
+        b = self.act_b(dsparams[:,:,1*ndim:2*ndim])
+        w = self.act_w(dsparams[:,:,2*ndim:3*ndim])
+        
+        
+        pre_sigm = a * x[:,:,None] + b
+        sigm = torch.sigmoid(pre_sigm)
+        x_pre = torch.sum(w*sigm, dim=2)
+        x_pre_clipped = x_pre * (1-nn_.delta) + nn_.delta * 0.5
+        x_ = log(x_pre_clipped) - log(1-x_pre_clipped)
+        xnew = x_
+        
+        logj = log(w) + nn_.logsigmoid(pre_sigm) + \
+            nn_.logsigmoid(-pre_sigm) + log(a)
+
+        logj = utils.log_sum_exp(logj,2).sum(2)
+        logdet_ = logj + np.log(1-nn_.delta) - \
+        (log(x_pre_clipped) + log(-x_pre_clipped+1))
+        logdet = logdet_.sum(1) + logdet
+            
+            
+        return xnew, logdet
 
 
 class FlipFlow(BaseFlow):
