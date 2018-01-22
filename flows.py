@@ -219,7 +219,8 @@ class SigmoidFlow(BaseFlow):
         super(SigmoidFlow, self).__init__()
         self.num_ds_dim = num_ds_dim
         
-        self.act_a = lambda x: torch.exp(x) + nn_.delta
+        #self.act_a = lambda x: torch.exp(x) + nn_.delta
+        self.act_a = lambda x: nn_.softplus(x)#torch.exp(x) + nn_.delta
         self.act_b = lambda x: x
         self.act_w = lambda x: nn_.softmax(x,dim=2)
         
