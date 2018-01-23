@@ -9,6 +9,8 @@ Created on Mon Dec 11 16:02:58 2017
 import torch
 import torch.nn as nn
 from torch.nn import Module
+from torch.nn.parameter import Parameter
+from torch.nn import functional as F
 import nn as nn_
 from torch.autograd import Variable
 import iaf_modules 
@@ -172,10 +174,9 @@ class BlockAffineFlow(Module):
 class IAF_DSF(BaseFlow):
     
     def __init__(self, dim, hid_dim, context_dim, num_layers,
-                 activation=nn.ELU(), realify=nn_.softplus,
+                 activation=nn.ELU(),
                  num_ds_dim=4, num_ds_layers=1, num_ds_multiplier=3):
         super(IAF_DSF, self).__init__()
-        self.realify = realify
         
         self.dim = dim
         self.context_dim = context_dim
@@ -220,8 +221,7 @@ class SigmoidFlow(BaseFlow):
         super(SigmoidFlow, self).__init__()
         self.num_ds_dim = num_ds_dim
         
-        #self.act_a = lambda x: torch.exp(x) + nn_.delta
-        self.act_a = lambda x: nn_.softplus(x)#torch.exp(x) + nn_.delta
+        self.act_a = lambda x: nn_.softplus(x)
         self.act_b = lambda x: x
         self.act_w = lambda x: nn_.softmax(x,dim=2)
         
@@ -240,7 +240,8 @@ class SigmoidFlow(BaseFlow):
         x_ = log(x_pre_clipped) - log(1-x_pre_clipped)
         xnew = x_
         
-        logj = log(w) + nn_.logsigmoid(pre_sigm) + \
+        logj = F.log_softmax(dsparams[:,:,2*ndim:3*ndim], dim=2) + \
+            nn_.logsigmoid(pre_sigm) + \
             nn_.logsigmoid(-pre_sigm) + log(a)
 
         logj = utils.log_sum_exp(logj,2).sum(2)
@@ -256,10 +257,9 @@ class SigmoidFlow(BaseFlow):
 class IAF_DDSF(BaseFlow):
     
     def __init__(self, dim, hid_dim, context_dim, num_layers,
-                 activation=nn.ELU(), realify=nn_.softplus,
+                 activation=nn.ELU(),
                  num_ds_dim=4, num_ds_layers=1, num_ds_multiplier=3):
         super(IAF_DDSF, self).__init__()
-        self.realify = realify
         
         self.dim = dim
         self.context_dim = context_dim
@@ -270,10 +270,31 @@ class IAF_DDSF(BaseFlow):
                 dim, hid_dim, context_dim, num_layers, 
                 num_ds_multiplier*(hid_dim/dim)*num_ds_layers, activation)
         
+        num_dsparams = 0
+        for i in range(num_ds_layers):
+            if i == 0:
+                in_dim = 1
+            else:
+                in_dim = num_ds_dim
+            if i == num_ds_layers-1:
+                out_dim = 1
+            else:
+                out_dim = num_ds_dim
+          
+            u_dim = in_dim
+            w_dim = num_ds_dim
+            a_dim = b_dim = num_ds_dim
+            num_dsparams += u_dim + w_dim + a_dim + b_dim
+            
+            self.add_module('sf{}'.format(i),
+                            DenseSigmoidFlow(in_dim,
+                                             num_ds_dim,
+                                             out_dim))
+            
         self.out_to_dsparams = nn.Conv1d(
                 num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
-                3*num_ds_layers*num_ds_dim, 1)
-        self.sf = SigmoidFlow()
+                num_dsparams, 1)
+        
         
         self.reset_parameters()
         
@@ -286,49 +307,97 @@ class IAF_DDSF(BaseFlow):
         out, _ = self.made((x, context))
         out = out.permute(0,2,1)
         dsparams = self.out_to_dsparams(out).permute(0,2,1)
-        nparams = self.num_ds_dim*3
         
-        h = x
+        
+        start = 0
+        
+        h = x[:,:,None]
+        n = x.size(0)
+        lgd = Variable(torch.from_numpy(
+            np.zeros((n, self.dim, 1, 1)).astype('float32')))
+        if self.out_to_dsparams.weight.is_cuda:
+            lgd = lgd.cuda()
         for i in range(self.num_ds_layers):
-            params = dsparams[:,:,i*nparams:(i+1)*nparams]
-            h, logdet = self.sf(h, logdet, params)
+            if i == 0:
+                in_dim = 1
+            else:
+                in_dim = self.num_ds_dim
+            if i == self.num_ds_layers-1:
+                out_dim = 1
+            else:
+                out_dim = self.num_ds_dim
+            
+            u_dim = in_dim
+            w_dim = self.num_ds_dim
+            a_dim = b_dim = self.num_ds_dim
+            end = start + u_dim + w_dim + a_dim + b_dim
+            
+            params = dsparams[:,:,start:end]
+            h, lgd = getattr(self,'sf{}'.format(i))(h, lgd, params)
+            start = end
         
-        return h, logdet, context
+        assert out_dim == 1, 'last dsf out dim should be 1'
+        return h[:,:,0], lgd[:,:,0,0].sum(1) + logdet, context
 
 
 class DenseSigmoidFlow(BaseFlow):
     
-    def __init__(self, num_ds_dim=4):
-        super(SigmoidFlow, self).__init__()
-        self.num_ds_dim = num_ds_dim
+    def __init__(self, in_dim, hidden_dim, out_dim):
+        super(DenseSigmoidFlow, self).__init__()
+        self.in_dim = in_dim
+        self.hidden_dim = hidden_dim
+        self.out_dim = out_dim
         
-        self.act_a = lambda x: torch.exp(x) + nn_.delta
+        self.act_a = lambda x: nn_.softplus(x)
         self.act_b = lambda x: x
-        self.act_w = lambda x: nn_.softmax(x,dim=2)
+        self.act_w = lambda x: nn_.softmax(x,dim=3)
+        self.act_u = lambda x: nn_.softmax(x,dim=3)
+        
+        self.u_ = Parameter(torch.Tensor(hidden_dim, in_dim))
+        self.w_ = Parameter(torch.Tensor(out_dim, hidden_dim))
+        
+        self.reset_parameters()
+        
+    def reset_parameters(self):
+        self.u_.data.uniform_(-0.001, 0.001)
+        self.w_.data.uniform_(-0.001, 0.001)
+        
         
     def forward(self, x, logdet, dsparams):
-        
-        ndim = self.num_ds_dim
+        ndim = self.hidden_dim
+        pre_u = self.u_[None,None,:,:]+dsparams[:,:,-self.in_dim:][:,:,None,:]
+        pre_w = self.w_[None,None,:,:]+dsparams[:,:,2*ndim:3*ndim][:,:,None,:]
         a = self.act_a(dsparams[:,:,0*ndim:1*ndim])
         b = self.act_b(dsparams[:,:,1*ndim:2*ndim])
-        w = self.act_w(dsparams[:,:,2*ndim:3*ndim])
+        w = self.act_w(pre_w)
+        u = self.act_u(pre_u)
         
         
-        pre_sigm = a * x[:,:,None] + b
+        pre_sigm = torch.sum(u * a[:,:,:,None] * x[:,:,None,:], 3) + b
         sigm = torch.sigmoid(pre_sigm)
-        x_pre = torch.sum(w*sigm, dim=2)
+        x_pre = torch.sum(w*sigm[:,:,None,:], dim=3)
         x_pre_clipped = x_pre * (1-nn_.delta) + nn_.delta * 0.5
         x_ = log(x_pre_clipped) - log(1-x_pre_clipped)
         xnew = x_
         
-        logj = log(w) + nn_.logsigmoid(pre_sigm) + \
-            nn_.logsigmoid(-pre_sigm) + log(a)
-
-        logj = utils.log_sum_exp(logj,2).sum(2)
+        logj = F.log_softmax(pre_w, dim=3) + \
+            nn_.logsigmoid(pre_sigm[:,:,None,:]) + \
+            nn_.logsigmoid(-pre_sigm[:,:,None,:]) + log(a[:,:,None,:])
+        # n, d, d2, dh
+        
+        logj = logj[:,:,:,:,None] + F.log_softmax(pre_u, dim=3)[:,:,None,:,:]
+        # n, d, d2, dh, d1
+        
+        logj = utils.log_sum_exp(logj,3).sum(3)
+        # n, d, d2, d1
+        
         logdet_ = logj + np.log(1-nn_.delta) - \
-        (log(x_pre_clipped) + log(-x_pre_clipped+1))
-        logdet = logdet_.sum(1) + logdet
-            
+            (log(x_pre_clipped) + log(-x_pre_clipped+1))[:,:,:,None]
+        
+        
+        logdet = utils.log_sum_exp(
+            logdet_[:,:,:,:,None] + logdet[:,:,None,:,:], 3).sum(3)
+        # n, d, d2, d1, d0 -> n, d, d2, d0
             
         return xnew, logdet
 
@@ -372,9 +441,16 @@ if __name__ == '__main__':
     
     
     mdl = IAF_DSF(784, 1000, 200, 3)
-    mdl(inputs)
+    print mdl(inputs)[0].size()
     
     
+    n = 2
+    dim = 2
+    num_ds_dim = 4
+    num_in_dim = 1
+    dsf = DenseSigmoidFlow(num_in_dim,num_ds_dim,num_ds_dim)
     
-
-
+    mdl = IAF_DDSF(784, 1000, 200, 3, num_ds_layers=2)
+    print mdl(inputs)[0].size()
+    
+    

@@ -287,7 +287,7 @@ class cMADE(Module):
             mask = torch.from_numpy(ms[i])
             if self.input_to_hidden[i*2].mask.is_cuda:
                 mask = mask.cuda()
-            self.input_to_hidden[i*2].mask.data.zero_().add_(mask)
+            self.input_to_hidden[i*2].mask.zero_().add_(mask)
         self.rx = rx
 
 if __name__ == '__main__':
