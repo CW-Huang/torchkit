@@ -126,7 +126,7 @@ class IAF(BaseFlow):
         lstd = out[:,:,1]
         std = self.realify(lstd)
         
-        x_ = (1-std) * mean + std * x
+        x_ = mean + std * x
         logdet_ = sum_from_one(torch.log(std)) + logdet
         return x_, logdet_, context
 
