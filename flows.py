@@ -97,7 +97,7 @@ class LinearFlow(BaseFlow):
 class IAF(BaseFlow):
     
     def __init__(self, dim, hid_dim, context_dim, num_layers,
-                 activation=nn.ELU(), realify=nn_.softplus):
+                 activation=nn.ELU(), realify=nn_.sigmoid):
         super(IAF, self).__init__()
         self.realify = realify
         
@@ -117,6 +117,8 @@ class IAF(BaseFlow):
         if self.realify == nn_.softplus:
             inv = np.log(np.exp(1-nn_.delta)-1) 
             self.made.hidden_to_output.cbias.bias.data[1::2].uniform_(inv,inv)
+        elif self.realify == nn_.sigmoid:
+            self.made.hidden_to_output.cbias.bias.data[1::2].uniform_(2.0,2.0)
         
         
     def forward(self, inputs):
@@ -126,7 +128,12 @@ class IAF(BaseFlow):
         lstd = out[:,:,1]
         std = self.realify(lstd)
         
-        x_ = mean + std * x
+        if self.realify == nn_.softplus:
+            x_ = mean + std * x
+        elif self.realify == nn_.sigmoid:
+            x_ = (-std+1.0) * mean + std * x
+        elif self.realify == nn_.sigmoid2:
+            x_ = (-std+2.0) * mean + std * x
         logdet_ = sum_from_one(torch.log(std)) + logdet
         return x_, logdet_, context
 
@@ -166,9 +173,6 @@ class BlockAffineFlow(Module):
         logdet_ = sum_from_one(torch.log(std)) + logdet
         return x_, logdet_, context
 
-    def cuda(self):
-        self.gpu = True
-        return super(cuda, self).cuda()
 
 
 class IAF_DSF(BaseFlow):

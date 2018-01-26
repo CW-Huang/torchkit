@@ -28,6 +28,7 @@ softplus_ = nn.Softplus()
 softplus = lambda x: softplus_(x) + delta 
 sigmoid_ = nn.Sigmoid()
 sigmoid = lambda x: sigmoid_(x) * (1-delta) + 0.5 * delta 
+sigmoid2 = lambda x: sigmoid(x) * 2.0
 logsigmoid = lambda x: -softplus(-x)
 def softmax(x, dim=-1):
     e_x = torch.exp(x - x.max(dim=dim, keepdim=True)[0])
@@ -38,7 +39,7 @@ def softmax(x, dim=-1):
 class WNlinear(Module):
 
     def __init__(self, in_features, out_features, 
-                 bias=True, mask=None, norm=True):
+                 bias=True, mask=N_, norm=True):
         super(WNlinear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -66,7 +67,7 @@ class WNlinear(Module):
             weight = self.scale[:,N_].mul(direction)
         else:
             weight = self.scale[:,N_].mul(self.direction)
-        if self.mask is not None:
+        if self.mask is not N_:
             #weight = weight * getattr(self.mask, 
             #                          ('cpu', 'cuda')[weight.is_cuda])()
             weight = weight * Variable(self.mask)
@@ -83,7 +84,7 @@ class WNlinear(Module):
 class CWNlinear(Module):
 
     def __init__(self, in_features, out_features, context_features,
-                 mask=None, norm=True):
+                 mask=N_, norm=True):
         super(CWNlinear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -110,7 +111,7 @@ class CWNlinear(Module):
             weight = direction
         else:
             weight = self.direction
-        if self.mask is not None:
+        if self.mask is not N_:
             #weight = weight * getattr(self.mask,
             #                          ('cpu', 'cuda')[weight.is_cuda])()
             weight = weight * Variable(self.mask)
@@ -225,7 +226,8 @@ class _WNconvNd(Module):
 class WNconv2d(_WNconvNd):
 
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
-                 padding=0, dilation=1, groups=1, bias=True):
+                 padding=0, dilation=1, groups=1, bias=True,
+                 mask=N_, norm=True):
         kernel_size = _pair(kernel_size)
         stride = _pair(stride)
         padding = _pair(padding)
@@ -233,14 +235,23 @@ class WNconv2d(_WNconvNd):
         super(WNconv2d, self).__init__(
             in_channels, out_channels, kernel_size, stride, padding, dilation,
             False, _pair(0), groups, bias)
-
+        
+        self.register_buffer('mask',mask)
+        self.norm = norm
+        
     def forward(self, input):
-        dir_ = self.direction
-        direction = dir_.div(
-                dir_.pow(2).sum(1).sum(1).sum(1).sqrt()[:,N_,N_,N_])
-        weight = self.scale[:,N_,N_,N_].mul(direction)
+        if self.norm:
+            dir_ = self.direction
+            direction = dir_.div(
+                    dir_.pow(2).sum(1).sum(1).sum(1).sqrt()[:,N_,N_,N_])
+            weight = self.scale[:,N_,N_,N_].mul(direction)
+        else:
+            weight = self.scale[:,N_,N_,N_].mul(self.direction)
+        if self.mask is not None:
+            weight = weight * Variable(self.mask)
         return F.conv2d(input, weight, self.bias, self.stride,
                         self.padding, self.dilation, self.groups)
+
 
 
 class ResConv2d(nn.Module):
@@ -268,6 +279,7 @@ class ResConv2d(nn.Module):
         out_skip = self.conv_01(input)
         return out_nonlinear + out_skip
 
+
 class ResLinear(nn.Module):
     
     def __init__(
@@ -290,7 +302,8 @@ class ResLinear(nn.Module):
         out_skip = input if self.same_dim else self.dot_01(input)
         return out_nonlinear + out_skip
 
-
+        
+    
 class Reshape(nn.Module):
     
     def __init__(self, shape):
