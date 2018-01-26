@@ -11,26 +11,12 @@ import math
 
 
 class Adam(Optimizer):
-    """Implements Adam algorithm.
-
-    It has been proposed in `Adam: A Method for Stochastic Optimization`_.
-
-    Arguments:
-        params (iterable): iterable of parameters to optimize or dicts defining
-            parameter groups
-        lr (float, optional): learning rate (default: 1e-3)
-        betas (Tuple[float, float], optional): coefficients used for computing
-            running averages of gradient and its square (default: (0.9, 0.999))
-        eps (float, optional): term added to the denominator to improve
-            numerical stability (default: 1e-8)
-        weight_decay (float, optional): weight decay (L2 penalty) (default: 0)
-        amsgrad (boolean, optional): whether to use the AMSGrad variant of this
-            algorithm from the paper `On the Convergence of Adam and Beyond`_
-
-    .. _Adam\: A Method for Stochastic Optimization:
-        https://arxiv.org/abs/1412.6980
-    .. _On the Convergence of Adam and Beyond:
-        https://openreview.net/forum?id=ryQu7f-RZ
+    """
+    Adam with polyak averaging
+    
+    to access the expentially decayed average of parameters, do optim.swap().
+    after accessing the parameters, do optim.swap() again to recover the
+    current value
     """
 
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8,
@@ -74,8 +60,7 @@ class Adam(Optimizer):
                     # Exponential moving average of squared gradient values
                     state['exp_avg_sq'] = torch.zeros_like(p.data)
                     # Exponential moving average of param
-                    if polyak > 0.0:
-                        state['exp_avg_param'] = torch.zeros_like(p.data)
+                    state['exp_avg_param'] = torch.zeros_like(p.data)
                     if amsgrad:
                         # Maintains max of all exp. moving avg. 
                         # of sq. grad. values
@@ -109,10 +94,9 @@ class Adam(Optimizer):
                                           bias_correction1
                 
                 p.data.addcdiv_(-step_size, exp_avg, denom)
-                if polyak > 0.0:
-                    state['exp_avg_param'] = \
-                        ( polyak * state['exp_avg_param'] + \
-                          (1-polyak) * p.data )
+                state['exp_avg_param'] = \
+                    ( polyak * state['exp_avg_param'] + \
+                      (1-polyak) * p.data )
                         
         return loss
     
