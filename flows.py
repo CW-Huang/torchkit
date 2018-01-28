@@ -97,7 +97,7 @@ class LinearFlow(BaseFlow):
 class IAF(BaseFlow):
     
     def __init__(self, dim, hid_dim, context_dim, num_layers,
-                 activation=nn.ELU(), realify=nn_.sigmoid):
+                 activation=nn.ELU(), realify=nn_.sigmoid, fixed_order=False):
         super(IAF, self).__init__()
         self.realify = realify
         
@@ -105,7 +105,8 @@ class IAF(BaseFlow):
         self.context_dim = context_dim
         
         self.made = iaf_modules.cMADE(
-                dim, hid_dim, context_dim, num_layers, 2, activation)
+                dim, hid_dim, context_dim, num_layers, 2, 
+                activation, fixed_order)
        
         self.reset_parameters()
         
@@ -178,7 +179,7 @@ class BlockAffineFlow(Module):
 class IAF_DSF(BaseFlow):
     
     def __init__(self, dim, hid_dim, context_dim, num_layers,
-                 activation=nn.ELU(),
+                 activation=nn.ELU(), fixed_order=False,
                  num_ds_dim=4, num_ds_layers=1, num_ds_multiplier=3):
         super(IAF_DSF, self).__init__()
         
@@ -189,18 +190,26 @@ class IAF_DSF(BaseFlow):
         
         self.made = iaf_modules.cMADE(
                 dim, hid_dim, context_dim, num_layers, 
-                num_ds_multiplier*(hid_dim/dim)*num_ds_layers, activation)
+                num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
+                activation, fixed_order)
         
         self.out_to_dsparams = nn.Conv1d(
                 num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
                 3*num_ds_layers*num_ds_dim, 1)
-        self.sf = SigmoidFlow()
+        self.sf = SigmoidFlow(num_ds_dim)
         
         self.reset_parameters()
         
     def reset_parameters(self):
         self.out_to_dsparams.weight.data.uniform_(-0.001, 0.001)
         self.out_to_dsparams.bias.data.uniform_(0.0, 0.0)
+        
+        inv = np.log(np.exp(1-nn_.delta)-1) 
+        for l in range(self.num_ds_layers):
+            nc = self.num_ds_dim
+            nparams = nc * 3
+            s = l*nparams
+            self.out_to_dsparams.bias.data[s:s+nc].uniform_(inv,inv)
         
     def forward(self, inputs):
         x, logdet, context = inputs
@@ -261,7 +270,7 @@ class SigmoidFlow(BaseFlow):
 class IAF_DDSF(BaseFlow):
     
     def __init__(self, dim, hid_dim, context_dim, num_layers,
-                 activation=nn.ELU(),
+                 activation=nn.ELU(), fixed_order=False,
                  num_ds_dim=4, num_ds_layers=1, num_ds_multiplier=3):
         super(IAF_DDSF, self).__init__()
         
@@ -272,7 +281,8 @@ class IAF_DDSF(BaseFlow):
         
         self.made = iaf_modules.cMADE(
                 dim, hid_dim, context_dim, num_layers, 
-                num_ds_multiplier*(hid_dim/dim)*num_ds_layers, activation)
+                num_ds_multiplier*(hid_dim/dim)*num_ds_layers,
+                activation, fixed_order)
         
         num_dsparams = 0
         for i in range(num_ds_layers):
