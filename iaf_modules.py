@@ -8,17 +8,14 @@ Created on Mon Dec 11 13:58:12 2017
 
 
 
-import math
 import numpy as np
 
 import torch
 import torch.nn as nn
 from torch.nn import Module
-from torch.nn import functional as F
-from torch.nn.parameter import Parameter
 
 import nn as nn_
-import utils
+
 
 # aliasing
 N_ = None
@@ -32,122 +29,7 @@ softplus = lambda x: softplus_(x) + delta
 tile = lambda x, r: np.tile(x,r).reshape(x.shape[0], x.shape[1]*r)
 
 
-# =============================================================================
-# MADE with fixed masks (d_h > d_x)   [Archived]
-# =============================================================================
-#
-#def get_mask(d0, d1, d2, diag=1):
-#    m1 = -(-d1/d0)
-#    m2 = -(-d2/d0)
-#    mask = np.zeros((d0, d0)).astype('float32')
-#    iu = np.triu_indices(d0)
-#    mask[iu] = 1
-#    if not diag:
-#        mask[range(d0), range(d0)] = 0
-#    mask = tile(tile(mask[:,:,N_], m2).T[:,:,N_], m1).T
-#    mask = np.delete(mask, np.arange(m1*d0-d1)*m1, 0)
-#    mask = np.delete(mask, np.arange(m2*d0-d2)*m2, 1)
-#    return mask
-#
-#
-#class MADE(Module):
-#
-#    def __init__(self, dim, hid_dim, num_layers,
-#                 num_outlayers=1, activation=nn.ELU()):
-#        super(MADE, self).__init__()
-#        
-#        oper = nn_.WNlinear
-#        
-#        self.dim = dim
-#        self.hid_dim = hid_dim
-#        self.num_outlayers = num_outlayers
-#        self.activation = activation
-#        
-#        d0 = dim
-#        d1 = hid_dim
-#        d2 = dim
-#        
-#        m0 = utils.varify(get_mask(d0, d0, d1, 0))
-#        mh = utils.varify(get_mask(d0, d1, d1))
-#        ml = get_mask(d0, d1, d0)
-#        self.ms = [m0, mh, ml]
-#        ml_ = utils.varify(
-#                (ml[:,:,None]*([np.cast['float32'](1),] *\
-#                               num_outlayers)).reshape(
-#                               hid_dim, dim*num_outlayers))
-#
-#        sequels = list()
-#        for i in range(num_layers-1):
-#            if i==0:
-#                sequels.append(oper(d0, d1, True, m0.permute(1,0), False))
-#                sequels.append(activation)
-#            else:
-#                sequels.append(oper(d1, d1, True, mh.permute(1,0), False))
-#                sequels.append(activation)
-#                
-#        self.input_to_hidden = nn.Sequential(*sequels)
-#        self.hidden_to_output = oper(
-#                d1, d2*num_outlayers, True, ml_.permute(1,0))
-#
-#    def forward(self, input):
-#        hid = self.input_to_hidden(input)
-#        return self.hidden_to_output(hid).view(
-#                -1, self.dim, self.num_outlayers)
-#
-#
-#class cMADE(Module):
-#
-#    def __init__(self, dim, hid_dim, context_dim, num_layers,
-#                 num_outlayers=1, activation=nn.ELU()):
-#        super(cMADE, self).__init__()
-#        
-#        oper = nn_.CWNlinear
-#        
-#        self.dim = dim
-#        self.hid_dim = hid_dim
-#        self.context_dim = context_dim
-#        self.num_outlayers = num_outlayers
-#        self.activation = nn_.Lambda(lambda x: (activation(x[0]), x[1]))
-#        
-#        
-#        d0 = dim
-#        d1 = hid_dim
-#        d2 = dim
-#        dc = context_dim
-#        
-#        m0 = utils.varify(get_mask(d0, d0, d1, 0))
-#        mh = utils.varify(get_mask(d0, d1, d1))
-#        ml = get_mask(d0, d1, d0)
-#        self.ms = [m0, mh, ml]
-#        ml_ = utils.varify(
-#                (ml[:,:,None]*([np.cast['float32'](1),] *\
-#                               num_outlayers)).reshape(
-#                               hid_dim, dim*num_outlayers))
-#
-#        sequels = list()
-#        for i in range(num_layers-1):
-#            if i==0:
-#                sequels.append(oper(d0, d1, dc, m0.permute(1,0), False))
-#                sequels.append(self.activation)
-#            else:
-#                sequels.append(oper(d1, d1, dc, mh.permute(1,0), False))
-#                sequels.append(self.activation)
-#                
-#        self.input_to_hidden = nn.Sequential(*sequels)
-#        self.hidden_to_output = oper(
-#                d1, d2*num_outlayers, dc, ml_.permute(1,0))
-#
-#    def forward(self, inputs):
-#        input, context = inputs
-#        hid, _ = self.input_to_hidden((input, context))
-#        out, _ = self.hidden_to_output((hid, context))
-#        return out.view(-1, self.dim, self.num_outlayers), context
-
-
-# =============================================================================
-# MADE with re=randomizable masks (no constraint on d_h)
-# =============================================================================
-
+# %------------ MADE ------------% 
 
 def get_rank(max_rank, num_out):
     rank_out = np.array([])
@@ -163,26 +45,33 @@ def get_rank(max_rank, num_out):
 def get_mask_from_ranks(r1, r2):
     return (r2[:, None] >= r1[None, :]).astype('float32')
 
-def get_masks_all(ds):
+def get_masks_all(ds, fixed_order=False):
     # ds: list of dimensions dx, d1, d2, ... dh, dx, 
     #                       (2 in/output + h hidden layers)
     dx = ds[0]
     ms = list()
     rx = get_rank(dx, dx)
+    if fixed_order:
+        rx = np.sort(rx)
     r1 = rx
-    for d in ds[1:-1]:
-        r2 = get_rank(dx-1, d)
+    if dx != 1:
+        for d in ds[1:-1]:
+            r2 = get_rank(dx-1, d)
+            ms.append(get_mask_from_ranks(r1, r2))
+            r1 = r2
+        r2 = rx - 1
         ms.append(get_mask_from_ranks(r1, r2))
-        r1 = r2
-    r2 = rx - 1
-    ms.append(get_mask_from_ranks(r1, r2))
+    else:
+        ms = [np.zeros([ds[i+1],ds[i]]).astype('float32') for \
+              i in range(len(ds)-1)]
     assert np.all(np.diag(reduce(np.dot,ms[::-1])) == 0), 'wrong masks'
     
     return ms, rx
 
 
-def get_masks(dim, dh, num_layers, num_outlayers):
-    ms, rx = get_masks_all([dim,]+[dh for i in range(num_layers-1)]+[dim,])
+def get_masks(dim, dh, num_layers, num_outlayers, fixed_order=False):
+    ms, rx = get_masks_all([dim,]+[dh for i in range(num_layers-1)]+[dim,],
+                           fixed_order)
     ml = ms[-1]
     ml_ = (ml.transpose(1,0)[:,:,None]*([np.cast['float32'](1),] *\
                            num_outlayers)).reshape(
@@ -194,7 +83,7 @@ def get_masks(dim, dh, num_layers, num_outlayers):
 class MADE(Module):
 
     def __init__(self, dim, hid_dim, num_layers,
-                 num_outlayers=1, activation=nn.ELU()):
+                 num_outlayers=1, activation=nn.ELU(), fixed_order=False):
         super(MADE, self).__init__()
         
         oper = nn_.WNlinear
@@ -206,7 +95,8 @@ class MADE(Module):
         self.activation = activation
         
         
-        ms, rx = get_masks(dim, hid_dim, num_layers, num_outlayers)
+        ms, rx = get_masks(dim, hid_dim, num_layers, num_outlayers.
+                           fixed_order)
         ms = map(torch.from_numpy, ms)
         self.rx = rx
         
@@ -241,7 +131,7 @@ class MADE(Module):
 class cMADE(Module):
 
     def __init__(self, dim, hid_dim, context_dim, num_layers,
-                 num_outlayers=1, activation=nn.ELU()):
+                 num_outlayers=1, activation=nn.ELU(), fixed_order=False):
         super(cMADE, self).__init__()
         
         oper = nn_.CWNlinear
@@ -254,7 +144,8 @@ class cMADE(Module):
         self.activation = nn_.Lambda(lambda x: (activation(x[0]), x[1]))
         
         
-        ms, rx = get_masks(dim, hid_dim, num_layers, num_outlayers)
+        ms, rx = get_masks(dim, hid_dim, num_layers, num_outlayers,
+                           fixed_order)
         ms = map(torch.from_numpy, ms)
         self.rx = rx
         
@@ -290,6 +181,128 @@ class cMADE(Module):
             self.input_to_hidden[i*2].mask.zero_().add_(mask)
         self.rx = rx
 
+
+
+# %------------ PixelCNN (stacks) ------------% 
+
+
+
+def get_conv2d_mask(filter_shape, pp_mask=0):
+    """
+    pp_mask: per pixel mask (generated by the same generator as MADE)
+    """
+    mask = np.ones(filter_shape, dtype='float32')
+
+    for i in range(filter_shape[2]):
+        for j in range(filter_shape[3]):
+            if i > filter_shape[2]//2:
+                mask[:,:,i,j] = 0
+            if i == filter_shape[2]//2 and j > filter_shape[3]//2:
+                mask[:,:,i,j] = 0
+
+    mask[:,:,filter_shape[2]//2,filter_shape[3]//2] = pp_mask
+    
+    return mask
+    
+    
+
+
+class _PixelCNN_Block(Module):
+    
+    def __init__(self, dim_in, dim_out, filter_size=3,
+                 activation=nn.ELU(), pp_mask=None):
+        super(_PixelCNN_Block, self).__init__()
+        
+        self.dim_in = dim_in
+        self.dim_out = dim_out
+        self.filter_size =filter_size
+        self.activation = activation
+        
+        
+        fs = filter_size
+        mask = torch.from_numpy(
+            get_conv2d_mask((dim_out, dim_in, 1, fs), pp_mask))
+        
+        # vertical stack
+        self.v0 = nn_.WNconv2d(
+            dim_in, dim_out, (fs//2+1, fs), padding=(fs//2+1, fs//2))
+        self.v1 = nn_.WNconv2d(
+            dim_out, dim_out, (1, 1), padding=(0, 0))
+        
+        # horizontal stack
+        self.h01 = nn_.WNconv2d(
+            dim_in, dim_out, (1, fs), padding=(0, fs//2), mask=mask)
+        self.h02 = nn_.WNconv2d(
+            dim_out, dim_out, (1, fs), padding=(0, fs//2), mask=None)
+        
+    
+    
+    def forward(self, inputs):
+        vin, hin = inputs
+        
+        vout_ = self.v0(vin)
+        vout = vout_[:,:,1:-(self.filter_size//2)-1,:]
+        vh = self.v1(vout_)[:,:,:-(self.filter_size//2)-2,:]
+        
+        h1 = self.h01(hin)
+        h2 = self.h02(vh)
+        hout = h1 + h2
+        
+        return (vout, hout)
+        
+        
+        
+        
+        
+
+class PixelCNN(Module):
+    
+    def __init__(self, dim, hid_dim, num_layers,
+                 filter_size=3, filter_size0=7,
+                 num_outlayers=1, activation=nn.ELU()):
+        super(PixelCNN, self).__init__()
+        
+        assert filter_size % 2 == 1, 'PixelCNN module only supports odd ' \
+                                     'values of filter_size'
+        self.dim = dim
+        self.hid_dim = hid_dim
+        self.num_layers = num_layers
+        self.filter_size =filter_size
+        self.num_outlayers = num_outlayers
+        self.activation = nn_.Lambda(lambda x: (activation(x[0]), x[1]))
+        oper = _PixelCNN_Block
+        
+        ms, rx = get_masks(dim, hid_dim, num_layers, num_outlayers)
+        self.rx = rx
+        
+        sequels = list()
+        for i in range(num_layers):
+            if i==0:
+                sequels.append(oper(dim, hid_dim, filter_size0, 
+                                    activation=activation, 
+                                    pp_mask=ms[i]))
+                sequels.append(self.activation)
+            elif i==num_layers-1:
+                sequels.append(oper(hid_dim, dim*num_outlayers, filter_size,
+                                    activation=activation, 
+                                    pp_mask=ms[i]))
+            else:
+                sequels.append(oper(hid_dim, hid_dim, filter_size, 
+                                    activation=activation, 
+                                    pp_mask=ms[i]))
+                sequels.append(self.activation)
+        
+        self.blocks = nn.Sequential(*sequels)
+    
+    def forward(self, input):
+        _, out = self.blocks((input, input))
+        f1 = out.size(2)
+        f2 = out.size(3)
+        return out.contiguous().view(-1, self.dim, self.num_outlayers, f1, f2)
+
+       
+
+
 if __name__ == '__main__':
     
     inp = torch.autograd.Variable(
@@ -304,5 +317,8 @@ if __name__ == '__main__':
     inputs = (input, con)
     print mdl(inputs)[0].size()
 
-  
+    mdl = PixelCNN(1,1,2,num_outlayers=1)
+    
+    
+    
     
