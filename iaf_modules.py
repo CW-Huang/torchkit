@@ -259,7 +259,7 @@ class _PixelCNN_Block(Module):
 class PixelCNN(Module):
     
     def __init__(self, dim, hid_dim, num_layers,
-                 filter_size=3, filter_size0=7,
+                 filter_size=5, filter_size0=11,
                  num_outlayers=1, activation=nn.ELU()):
         super(PixelCNN, self).__init__()
         

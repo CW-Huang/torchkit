@@ -12,16 +12,17 @@ from torch.nn import Module
 from torch.nn.parameter import Parameter
 from torch.nn import functional as F
 import nn as nn_
+from nn import log 
 from torch.autograd import Variable
 import iaf_modules 
 import utils
 import numpy as np
 
-sum1 = lambda x: x.sum(1)
-sum_from_one = lambda x: sum_from_one(sum1(x)) if len(x.size())>2 else sum1(x)
+
+sum_from_one = nn_.sum_from_one
 
 
-log = lambda x: torch.log(x*1e2)-np.log(1e2)
+pcnn = iaf_modules.PixelCNN
 
 
 class BaseFlow(Module):
@@ -62,8 +63,13 @@ class LinearFlow(BaseFlow):
         self.dim = dim
         self.context_dim = context_dim
         
-        self.mean = oper(context_dim, dim)
-        self.lstd = oper(context_dim, dim)
+        if type(dim) is int:
+            dim_ = dim
+        else:
+            dim_ = np.prod(dim)
+        
+        self.mean = oper(context_dim, dim_)
+        self.lstd = oper(context_dim, dim_)
         
         self.reset_parameters()
         
@@ -89,56 +95,15 @@ class LinearFlow(BaseFlow):
         lstd = self.lstd(context)
         std = self.realify(lstd)
         
-        x_ = mean + std * x
+        if type(self.dim) is int:
+            x_ = mean + std * x
+        else:
+            size = x.size()
+            x_ = mean.view(size) + std.view(size) * x
         logdet_ = sum_from_one(torch.log(std)) + logdet
         return x_, logdet_, context   
 
 
-class IAF(BaseFlow):
-    
-    def __init__(self, dim, hid_dim, context_dim, num_layers,
-                 activation=nn.ELU(), realify=nn_.sigmoid, fixed_order=False):
-        super(IAF, self).__init__()
-        self.realify = realify
-        
-        self.dim = dim
-        self.context_dim = context_dim
-        
-        self.made = iaf_modules.cMADE(
-                dim, hid_dim, context_dim, num_layers, 2, 
-                activation, fixed_order)
-       
-        self.reset_parameters()
-        
-    def reset_parameters(self):
-        self.made.hidden_to_output.cscale.weight.data.uniform_(-0.001, 0.001)
-        self.made.hidden_to_output.cscale.bias.data.uniform_(0.0, 0.0)
-        self.made.hidden_to_output.cbias.weight.data.uniform_(-0.001, 0.001)
-        self.made.hidden_to_output.cbias.bias.data.uniform_(0.0, 0.0)
-        if self.realify == nn_.softplus:
-            inv = np.log(np.exp(1-nn_.delta)-1) 
-            self.made.hidden_to_output.cbias.bias.data[1::2].uniform_(inv,inv)
-        elif self.realify == nn_.sigmoid:
-            self.made.hidden_to_output.cbias.bias.data[1::2].uniform_(2.0,2.0)
-        
-        
-    def forward(self, inputs):
-        x, logdet, context = inputs
-        out, _ = self.made((x, context))
-        mean = out[:,:,0]
-        lstd = out[:,:,1]
-        std = self.realify(lstd)
-        
-        if self.realify == nn_.softplus:
-            x_ = mean + std * x
-        elif self.realify == nn_.sigmoid:
-            x_ = (-std+1.0) * mean + std * x
-        elif self.realify == nn_.sigmoid2:
-            x_ = (-std+2.0) * mean + std * x
-        logdet_ = sum_from_one(torch.log(std)) + logdet
-        return x_, logdet_, context
-
- 
 class BlockAffineFlow(Module):
     # RealNVP
 
@@ -173,6 +138,67 @@ class BlockAffineFlow(Module):
         x_ = mean + std * x
         logdet_ = sum_from_one(torch.log(std)) + logdet
         return x_, logdet_, context
+    
+    
+class IAF(BaseFlow):
+    
+    def __init__(self, dim, hid_dim, context_dim, num_layers,
+                 activation=nn.ELU(), realify=nn_.sigmoid, fixed_order=False):
+        super(IAF, self).__init__()
+        self.realify = realify
+        
+        self.dim = dim
+        self.context_dim = context_dim
+        
+        if type(dim) is int:
+            self.mdl = iaf_modules.cMADE(
+                    dim, hid_dim, context_dim, num_layers, 2, 
+                    activation, fixed_order)
+            self.reset_parameters()
+        else:
+            self.mdl = pcnn(
+                    dim[0], hid_dim, num_layers, num_outlayers=2)
+        
+        
+    def reset_parameters(self):
+        self.mdl.hidden_to_output.cscale.weight.data.uniform_(-0.001, 0.001)
+        self.mdl.hidden_to_output.cscale.bias.data.uniform_(0.0, 0.0)
+        self.mdl.hidden_to_output.cbias.weight.data.uniform_(-0.001, 0.001)
+        self.mdl.hidden_to_output.cbias.bias.data.uniform_(0.0, 0.0)
+        if self.realify == nn_.softplus:
+            inv = np.log(np.exp(1-nn_.delta)-1) 
+            self.mdl.hidden_to_output.cbias.bias.data[1::2].uniform_(inv,inv)
+        elif self.realify == nn_.sigmoid:
+            self.mdl.hidden_to_output.cbias.bias.data[1::2].uniform_(2.0,2.0)
+        
+        
+    def forward(self, inputs):
+        x, logdet, context = inputs
+        out, _ = self.mdl((x, context))
+        if isinstance(self.mdl, iaf_modules.cMADE):
+            mean = out[:,:,0]
+            lstd = out[:,:,1]
+        elif isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
+            mean, lstd = torch.split(out, self.dim[0], -1)
+            mean = mean.permute(0,3,1,2)
+            lstd = lstd.permute(0,3,1,2)
+        elif isinstance(self.mdl, iaf_modules.PixelCNN):
+            mean, lstd = torch.split(out, self.dim[0], -1)
+            mean = mean.permute(0,3,1,2)
+            lstd = lstd.permute(0,3,1,2)
+            
+        std = self.realify(lstd)
+        
+        if self.realify == nn_.softplus:
+            x_ = mean + std * x
+        elif self.realify == nn_.sigmoid:
+            x_ = (-std+1.0) * mean + std * x
+        elif self.realify == nn_.sigmoid2:
+            x_ = (-std+2.0) * mean + std * x
+        logdet_ = sum_from_one(torch.log(std)) + logdet
+        return x_, logdet_, context
+
+ 
 
 
 
@@ -188,14 +214,23 @@ class IAF_DSF(BaseFlow):
         self.num_ds_dim = num_ds_dim
         self.num_ds_layers = num_ds_layers
         
-        self.made = iaf_modules.cMADE(
-                dim, hid_dim, context_dim, num_layers, 
-                num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
-                activation, fixed_order)
-        
-        self.out_to_dsparams = nn.Conv1d(
+        if type(dim) is int:
+            self.mdl = iaf_modules.cMADE(
+                    dim, hid_dim, context_dim, num_layers, 
+                    num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
+                    activation, fixed_order)
+            self.out_to_dsparams = nn.Conv1d(
                 num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
                 3*num_ds_layers*num_ds_dim, 1)
+        else:
+            self.mdl = iaf_modules.PixelCNNplusplus(
+                    dim[0], hid_dim, num_layers, 
+                    num_ds_multiplier*(hid_dim/dim[0])*num_ds_layers)
+            self.out_to_dsparams = nn.Conv1d(
+                num_ds_multiplier*(hid_dim/dim[0])*num_ds_layers, 
+                3*num_ds_layers*num_ds_dim, 1)
+        
+        
         self.sf = SigmoidFlow(num_ds_dim)
         
         self.reset_parameters()
@@ -213,16 +248,30 @@ class IAF_DSF(BaseFlow):
         
     def forward(self, inputs):
         x, logdet, context = inputs
-        out, _ = self.made((x, context))
-        out = out.permute(0,2,1)
+        out, _ = self.mdl((x, context))
+        if isinstance(self.mdl, iaf_modules.cMADE):
+            out = out.permute(0,2,1)
+        elif isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
+            out = out.permute(0,3,1,2).contiguous()
+            size = [int(y) for y in out.size()]
+            out = out.view(-1, size[1], size[2]*size[3])
+        elif isinstance(self.mdl, iaf_modules.PixelCNN):
+            mean, lstd = torch.split(out, self.dim[0], -1)
+            mean = mean.permute(0,3,1,2)
+            lstd = lstd.permute(0,3,1,2)
+        
         dsparams = self.out_to_dsparams(out).permute(0,2,1)
         nparams = self.num_ds_dim*3
         
-        h = x
+        h = x.view(x.size(0), -1)
         for i in range(self.num_ds_layers):
             params = dsparams[:,:,i*nparams:(i+1)*nparams]
             h, logdet = self.sf(h, logdet, params)
         
+        if isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
+            h = h.view(-1, *self.dim)
+        if isinstance(self.mdl, iaf_modules.PixelCNN):
+            h = h.view(-1, *self.dim)
         return h, logdet, context
 
 
@@ -244,7 +293,6 @@ class SigmoidFlow(BaseFlow):
         a = self.act_a(dsparams[:,:,0*ndim:1*ndim])
         b = self.act_b(dsparams[:,:,1*ndim:2*ndim])
         w = self.act_w(dsparams[:,:,2*ndim:3*ndim])
-        
         
         pre_sigm = a * x[:,:,None] + b
         sigm = torch.sigmoid(pre_sigm)
@@ -278,11 +326,23 @@ class IAF_DDSF(BaseFlow):
         self.context_dim = context_dim
         self.num_ds_dim = num_ds_dim
         self.num_ds_layers = num_ds_layers
+
+        if type(dim) is int:
+            self.mdl = iaf_modules.cMADE(
+                    dim, hid_dim, context_dim, num_layers, 
+                    num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
+                    activation, fixed_order)
+        else:
+            self.mdl = iaf_modules.PixelCNNplusplus(
+                    dim[0], hid_dim, num_layers, 
+                    num_ds_multiplier*(hid_dim/dim[0])*num_ds_layers)
+          
+            
         
-        self.made = iaf_modules.cMADE(
-                dim, hid_dim, context_dim, num_layers, 
-                num_ds_multiplier*(hid_dim/dim)*num_ds_layers,
-                activation, fixed_order)
+#        self.made = iaf_modules.cMADE(
+#                dim, hid_dim, context_dim, num_layers, 
+#                num_ds_multiplier*(hid_dim/dim)*num_ds_layers,
+#                activation, fixed_order)
         
         num_dsparams = 0
         for i in range(num_ds_layers):
@@ -304,31 +364,46 @@ class IAF_DDSF(BaseFlow):
                             DenseSigmoidFlow(in_dim,
                                              num_ds_dim,
                                              out_dim))
-            
-        self.out_to_dsparams = nn.Conv1d(
+        if type(dim) is int:
+            self.out_to_dsparams = nn.Conv1d(
                 num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
+                num_dsparams, 1)
+        else:
+            self.out_to_dsparams = nn.Conv1d(
+                num_ds_multiplier*(hid_dim/dim[0])*num_ds_layers, 
                 num_dsparams, 1)
         
         
         self.reset_parameters()
         
+
     def reset_parameters(self):
         self.out_to_dsparams.weight.data.uniform_(-0.001, 0.001)
         self.out_to_dsparams.bias.data.uniform_(0.0, 0.0)
         
     def forward(self, inputs):
         x, logdet, context = inputs
-        out, _ = self.made((x, context))
-        out = out.permute(0,2,1)
+        out, _ = self.mdl((x, context))
+        if isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
+            out = out.permute(0,3,1,2).contiguous()
+            size = [int(y) for y in out.size()]
+            out = out.view(-1, size[1], size[2]*size[3])
+        elif isinstance(self.mdl, iaf_modules.PixelCNN):
+            out = out.permute(0,3,1,2).contiguous()
+            size = [int(y) for y in out.size()]
+            out = out.view(-1, size[1], size[2]*size[3])
+        else:
+            out = out.permute(0,2,1)
         dsparams = self.out_to_dsparams(out).permute(0,2,1)
         
         
         start = 0
-        
-        h = x[:,:,None]
+
+        h = x.view(x.size(0),-1)[:,:,None]
         n = x.size(0)
+        dim = self.dim if type(self.dim) is int else self.dim[0]
         lgd = Variable(torch.from_numpy(
-            np.zeros((n, self.dim, 1, 1)).astype('float32')))
+            np.zeros((n, dim, 1, 1)).astype('float32')))
         if self.out_to_dsparams.weight.is_cuda:
             lgd = lgd.cuda()
         for i in range(self.num_ds_layers):
@@ -351,8 +426,16 @@ class IAF_DDSF(BaseFlow):
             start = end
         
         assert out_dim == 1, 'last dsf out dim should be 1'
-        return h[:,:,0], lgd[:,:,0,0].sum(1) + logdet, context
-
+        if isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
+            return h[:,:,0].view(-1, *self.dim), \
+                    lgd[:,:,0,0].sum(1) + logdet, context
+        elif isinstance(self.mdl, iaf_modules.PixelCNN):
+            return h[:,:,0].view(-1, *self.dim), \
+                    lgd[:,:,0,0].sum(1) + logdet, context
+        else:
+            return h[:,:,0], lgd[:,:,0,0].sum(1) + logdet, context
+            
+            
 
 class DenseSigmoidFlow(BaseFlow):
     
@@ -468,3 +551,9 @@ if __name__ == '__main__':
     print mdl(inputs)[0].size()
     
     
+    
+    mdl = IAF_DDSF([1,28,28], 6, 2, 3)
+    lgd = utils.varify(np.random.randn(4).astype('float32'))
+    x = utils.varify(np.random.randn(4,1,28,28).astype('float32'))
+    #print mdl.mdl.pic(x).size()
+    print mdl((x, lgd, 0))[0].size()
