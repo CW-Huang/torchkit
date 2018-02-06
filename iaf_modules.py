@@ -16,6 +16,7 @@ from torch.nn import Module
 
 import nn as nn_
 
+from external_pixelcnn.model import PixelCNN as PixelCNNpp_
 
 # aliasing
 N_ = None
@@ -95,7 +96,7 @@ class MADE(Module):
         self.activation = activation
         
         
-        ms, rx = get_masks(dim, hid_dim, num_layers, num_outlayers.
+        ms, rx = get_masks(dim, hid_dim, num_layers, num_outlayers,
                            fixed_order)
         ms = map(torch.from_numpy, ms)
         self.rx = rx
@@ -303,6 +304,39 @@ class PixelCNN(Module):
        
 
 
+# %------------ PixelCNN++ ------------% 
+
+
+
+class PixelCNNplusplus(Module):
+    
+    def __init__(self, dim, hid_dim, num_layers,
+                 num_outlayers=1):
+        super(PixelCNNplusplus, self).__init__()
+  
+        self.dim = dim
+        self.hid_dim = hid_dim
+        self.num_layers = num_layers
+        self.num_outlayers = num_outlayers
+        
+        self.pic = PixelCNNpp_(
+            nr_resnet=num_layers, nr_filters=hid_dim, 
+            nr_logistic_mix=num_outlayers, 
+            resnet_nonlinearity='concat_elu', input_channels=dim)
+      
+        self.reset_parameters()
+        
+    def reset_parameters(self):
+        
+        self.pic.nin_out.lin_a.bias.data.uniform_(0,0)
+        self.pic.nin_out.lin_a.weight_g.data.uniform_(-0.001,0.001)
+
+    def forward(self, inputs):
+        input, context = inputs
+        return self.pic(input).permute(0,3,1,2)
+    
+
+
 if __name__ == '__main__':
     
     inp = torch.autograd.Variable(
@@ -318,6 +352,16 @@ if __name__ == '__main__':
     print mdl(inputs)[0].size()
 
     mdl = PixelCNN(1,1,2,num_outlayers=1)
+    
+    mdl = PixelCNNplusplus(1,1,2,5)
+    print mdl.pic.nin_out.lin_a.weight.data
+    inp = torch.autograd.Variable(
+            torch.from_numpy(np.random.rand(1,1,28,28).astype('float32')))
+    #print mdl(inp).size()
+    print mdl.pic.nin_out.lin_a.weight.data
+    
+    
+    
     
     
     
