@@ -16,7 +16,7 @@ from torch.nn import Module
 
 import nn as nn_
 
-from external_pixelcnn.model import PixelCNN as PixelCNNpp_
+#from external_pixelcnn.model import PixelCNN as PixelCNNpp_
 
 # aliasing
 N_ = None
