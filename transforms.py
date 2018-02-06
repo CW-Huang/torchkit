@@ -7,6 +7,7 @@ Created on Thu Jan 25 00:00:37 2018
 """
 
 import torch
+from nn import logit
 
 
 class binarize(object):
@@ -27,7 +28,42 @@ class binarize(object):
         
         return torch.ge(x, threshold).float()
 
+
+class realify(object):
+    """ 
+    - rescale [0,1] to [0,255]
+    - add uniform(0,1) noise
+    - rescale to [0+delta,1-delta]
+    - pass through logit
+    """
+
+    def __init__(self, delta=0.01):
+        self.delta = delta
+
+    def __call__(self, x):
+
+        x = x[:]
+        x *= 255
+        noise = torch.zeros_like(x).uniform_(0,1)
+        x += noise
+        a, b = x.min(), x.max()
+        x -= a
+        x /= (b-a)
+        x *= 1 - self.delta * 2
+        x += self.delta
+        
+        return logit(x)
+
+
 class from_numpy(object):
     
     def __call__(self, x):
         return torch.from_numpy(x)
+
+
+
+
+
+    
+    
+    
