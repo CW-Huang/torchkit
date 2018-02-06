@@ -295,11 +295,14 @@ class PixelCNN(Module):
         
         self.blocks = nn.Sequential(*sequels)
     
-    def forward(self, input):
+    def forward(self, inputs):
+        input, context = inputs
         _, out = self.blocks((input, input))
         f1 = out.size(2)
         f2 = out.size(3)
-        return out.contiguous().view(-1, self.dim, self.num_outlayers, f1, f2)
+        return out.contiguous().view(
+                -1, self.dim*self.num_outlayers, f1, f2).permute(0,2,3,1), \
+                context
 
        
 
@@ -333,7 +336,7 @@ class PixelCNNplusplus(Module):
 
     def forward(self, inputs):
         input, context = inputs
-        return self.pic(input).permute(0,3,1,2)
+        return self.pic(input).permute(0,2,3,1), context
     
 
 
