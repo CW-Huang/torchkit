@@ -30,11 +30,16 @@ sigmoid_ = nn.Sigmoid()
 sigmoid = lambda x: sigmoid_(x) * (1-delta) + 0.5 * delta 
 sigmoid2 = lambda x: sigmoid(x) * 2.0
 logsigmoid = lambda x: -softplus(-x)
+logit = lambda x: torch.log
+log = lambda x: torch.log(x*1e2)-np.log(1e2)
+logit = lambda x: log(x) - log(1-x)
 def softmax(x, dim=-1):
     e_x = torch.exp(x - x.max(dim=dim, keepdim=True)[0])
     out = e_x / e_x.sum(dim=dim, keepdim=True)
     return out
-    
+
+sum1 = lambda x: x.sum(1)
+sum_from_one = lambda x: sum_from_one(sum1(x)) if len(x.size())>2 else sum1(x)
     
 class WNlinear(Module):
 
