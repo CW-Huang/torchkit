@@ -42,17 +42,16 @@ class realify(object):
 
     def __call__(self, x):
 
-        x = x[:]
-        x *= 255
+        x_ = x * 255.
         noise = torch.zeros_like(x).uniform_(0,1)
-        x += noise
-        a, b = x.min(), x.max()
-        x -= a
-        x /= (b-a)
-        x *= 1 - self.delta * 2
-        x += self.delta
+        x_ += noise
+        a, b = x_.min(), x_.max()
+        x_ -= a
+        x_ /= (b-a)
+        x_ *= 1 - self.delta * 2
+        x_ += self.delta
         
-        return logit(x)
+        return logit(x_)
 
 
 class from_numpy(object):
