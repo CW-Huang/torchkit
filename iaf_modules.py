@@ -317,26 +317,26 @@ class PixelCNNplusplus(Module):
                  num_outlayers=1):
         super(PixelCNNplusplus, self).__init__()
   
-        self.dim = dim
-        self.hid_dim = hid_dim
-        self.num_layers = num_layers
-        self.num_outlayers = num_outlayers
-        
-        self.pic = PixelCNNpp_(
-            nr_resnet=num_layers, nr_filters=hid_dim, 
-            nr_logistic_mix=num_outlayers, 
-            resnet_nonlinearity='concat_elu', input_channels=dim)
-      
-        self.reset_parameters()
-        
-    def reset_parameters(self):
-        
-        self.pic.nin_out.lin_a.bias.data.uniform_(0,0)
-        self.pic.nin_out.lin_a.weight_g.data.uniform_(-0.001,0.001)
-
-    def forward(self, inputs):
-        input, context = inputs
-        return self.pic(input).permute(0,2,3,1), context
+#        self.dim = dim
+#        self.hid_dim = hid_dim
+#        self.num_layers = num_layers
+#        self.num_outlayers = num_outlayers
+#        
+#        self.pic = PixelCNNpp_(
+#            nr_resnet=num_layers, nr_filters=hid_dim, 
+#            nr_logistic_mix=num_outlayers, 
+#            resnet_nonlinearity='concat_elu', input_channels=dim)
+#      
+#        self.reset_parameters()
+#        
+#    def reset_parameters(self):
+#        
+#        self.pic.nin_out.lin_a.bias.data.uniform_(0,0)
+#        self.pic.nin_out.lin_a.weight_g.data.uniform_(-0.001,0.001)
+#
+#    def forward(self, inputs):
+#        input, context = inputs
+#        return self.pic(input).permute(0,2,3,1), context
     
 
 
@@ -356,12 +356,12 @@ if __name__ == '__main__':
 
     mdl = PixelCNN(1,1,2,num_outlayers=1)
     
-    mdl = PixelCNNplusplus(1,1,2,5)
-    print mdl.pic.nin_out.lin_a.weight.data
-    inp = torch.autograd.Variable(
-            torch.from_numpy(np.random.rand(1,1,28,28).astype('float32')))
-    #print mdl(inp).size()
-    print mdl.pic.nin_out.lin_a.weight.data
+#    mdl = PixelCNNplusplus(1,1,2,5)
+#    print mdl.pic.nin_out.lin_a.weight.data
+#    inp = torch.autograd.Variable(
+#            torch.from_numpy(np.random.rand(1,1,28,28).astype('float32')))
+#    #print mdl(inp).size()
+#    print mdl.pic.nin_out.lin_a.weight.data
     
     
     

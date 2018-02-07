@@ -54,6 +54,9 @@ class realify(object):
         return logit(x_)
 
 
+
+
+
 class from_numpy(object):
     
     def __call__(self, x):
