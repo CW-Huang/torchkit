@@ -222,18 +222,16 @@ class IAF_DSF(BaseFlow):
             self.out_to_dsparams = nn.Conv1d(
                 num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
                 3*num_ds_layers*num_ds_dim, 1)
+            self.reset_parameters()
         else:
             self.mdl = pcnn(
                 dim[0], hid_dim, num_layers, 
-                num_outlayers=num_ds_multiplier*(hid_dim/dim[0])*num_ds_layers)
-            self.out_to_dsparams = nn.Conv1d(
-                num_ds_multiplier*(hid_dim/dim[0])*num_ds_layers, 
-                3*num_ds_layers*num_ds_dim, 1)
+                num_outlayers=3*num_ds_layers*num_ds_dim)
         
         
         self.sf = SigmoidFlow(num_ds_dim)
         
-        self.reset_parameters()
+        
         
     def reset_parameters(self):
         self.out_to_dsparams.weight.data.uniform_(-0.001, 0.001)
@@ -251,17 +249,24 @@ class IAF_DSF(BaseFlow):
         out, _ = self.mdl((x, context))
         if isinstance(self.mdl, iaf_modules.cMADE):
             out = out.permute(0,2,1)
+            dsparams = self.out_to_dsparams(out).permute(0,2,1)
+            nparams = self.num_ds_dim*3
         elif isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
             out = out.permute(0,3,1,2).contiguous()
             size = [int(y) for y in out.size()]
             out = out.view(-1, size[1], size[2]*size[3])
+            dsparams = self.out_to_dsparams(out).permute(0,2,1)
+            nparams = self.num_ds_dim*3
         elif isinstance(self.mdl, iaf_modules.PixelCNN):
-            out = out.permute(0,3,1,2).contiguous()
+            nparams = self.num_ds_dim*3
             size = [int(y) for y in out.size()]
-            out = out.view(-1, size[1], size[2]*size[3])
+            dsparams = out.permute(0,3,1,2).view(
+                size[0],nparams,-1).permute(0,2,1)
+            
+#            dsparams.view()
+            print dsparams.size()
+            
         
-        dsparams = self.out_to_dsparams(out).permute(0,2,1)
-        nparams = self.num_ds_dim*3
         
         h = x.view(x.size(0), -1)
         for i in range(self.num_ds_layers):
@@ -552,8 +557,8 @@ if __name__ == '__main__':
     
     
     
-    mdl = IAF_DSF([1,28,28], 6, 2, 3)
+    mdl = IAF_DSF([2,28,28], 6, 2, 3)
     lgd = utils.varify(np.random.randn(4).astype('float32'))
-    x = utils.varify(np.random.randn(4,1,28,28).astype('float32'))
+    x = utils.varify(np.random.randn(4,2,28,28).astype('float32'))
     #print mdl.mdl.pic(x).size()
     print mdl((x, lgd, 0))[0].size()
