@@ -256,9 +256,9 @@ class IAF_DSF(BaseFlow):
             size = [int(y) for y in out.size()]
             out = out.view(-1, size[1], size[2]*size[3])
         elif isinstance(self.mdl, iaf_modules.PixelCNN):
-            mean, lstd = torch.split(out, self.dim[0], -1)
-            mean = mean.permute(0,3,1,2)
-            lstd = lstd.permute(0,3,1,2)
+            out = out.permute(0,3,1,2).contiguous()
+            size = [int(y) for y in out.size()]
+            out = out.view(-1, size[1], size[2]*size[3])
         
         dsparams = self.out_to_dsparams(out).permute(0,2,1)
         nparams = self.num_ds_dim*3
@@ -547,12 +547,12 @@ if __name__ == '__main__':
     num_in_dim = 1
     dsf = DenseSigmoidFlow(num_in_dim,num_ds_dim,num_ds_dim)
     
-    mdl = IAF_DDSF(784, 1000, 200, 3, num_ds_layers=2)
+    mdl = IAF_DSF(784, 1000, 200, 3, num_ds_layers=2)
     print mdl(inputs)[0].size()
     
     
     
-    mdl = IAF_DDSF([1,28,28], 6, 2, 3)
+    mdl = IAF_DSF([1,28,28], 6, 2, 3)
     lgd = utils.varify(np.random.randn(4).astype('float32'))
     x = utils.varify(np.random.randn(4,1,28,28).astype('float32'))
     #print mdl.mdl.pic(x).size()
