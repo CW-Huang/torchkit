@@ -263,8 +263,6 @@ class IAF_DSF(BaseFlow):
             dsparams = out.permute(0,3,1,2).view(
                 size[0],nparams,-1).permute(0,2,1)
             
-#            dsparams.view()
-            print dsparams.size()
             
         
         
