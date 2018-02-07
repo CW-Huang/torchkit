@@ -223,9 +223,9 @@ class IAF_DSF(BaseFlow):
                 num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
                 3*num_ds_layers*num_ds_dim, 1)
         else:
-            self.mdl = iaf_modules.PixelCNNplusplus(
-                    dim[0], hid_dim, num_layers, 
-                    num_ds_multiplier*(hid_dim/dim[0])*num_ds_layers)
+            self.mdl = pcnn(
+                dim[0], hid_dim, num_layers, 
+                num_outlayers=num_ds_multiplier*(hid_dim/dim[0])*num_ds_layers)
             self.out_to_dsparams = nn.Conv1d(
                 num_ds_multiplier*(hid_dim/dim[0])*num_ds_layers, 
                 3*num_ds_layers*num_ds_dim, 1)
@@ -333,9 +333,9 @@ class IAF_DDSF(BaseFlow):
                     num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
                     activation, fixed_order)
         else:
-            self.mdl = iaf_modules.PixelCNNplusplus(
-                    dim[0], hid_dim, num_layers, 
-                    num_ds_multiplier*(hid_dim/dim[0])*num_ds_layers)
+            self.mdl = pcnn(
+                dim[0], hid_dim, num_layers, 
+                num_outlayers=num_ds_multiplier*(hid_dim/dim[0])*num_ds_layers)
           
             
         
