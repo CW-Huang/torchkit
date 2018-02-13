@@ -178,10 +178,10 @@ class IAF(BaseFlow):
         if isinstance(self.mdl, iaf_modules.cMADE):
             mean = out[:,:,0]
             lstd = out[:,:,1]
-        elif isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
-            mean, lstd = torch.split(out, self.dim[0], -1)
-            mean = mean.permute(0,3,1,2)
-            lstd = lstd.permute(0,3,1,2)
+#        elif isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
+#            mean, lstd = torch.split(out, self.dim[0], -1)
+#            mean = mean.permute(0,3,1,2)
+#            lstd = lstd.permute(0,3,1,2)
         elif isinstance(self.mdl, iaf_modules.PixelCNN):
             mean, lstd = torch.split(out, self.dim[0], -1)
             mean = mean.permute(0,3,1,2)
@@ -251,12 +251,12 @@ class IAF_DSF(BaseFlow):
             out = out.permute(0,2,1)
             dsparams = self.out_to_dsparams(out).permute(0,2,1)
             nparams = self.num_ds_dim*3
-        elif isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
-            out = out.permute(0,3,1,2).contiguous()
-            size = [int(y) for y in out.size()]
-            out = out.view(-1, size[1], size[2]*size[3])
-            dsparams = self.out_to_dsparams(out).permute(0,2,1)
-            nparams = self.num_ds_dim*3
+#        elif isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
+#            out = out.permute(0,3,1,2).contiguous()
+#            size = [int(y) for y in out.size()]
+#            out = out.view(-1, size[1], size[2]*size[3])
+#            dsparams = self.out_to_dsparams(out).permute(0,2,1)
+#            nparams = self.num_ds_dim*3
         elif isinstance(self.mdl, iaf_modules.PixelCNN):
             nparams = self.num_ds_dim*3
             size = [int(y) for y in out.size()]
@@ -271,8 +271,8 @@ class IAF_DSF(BaseFlow):
             params = dsparams[:,:,i*nparams:(i+1)*nparams]
             h, logdet = self.sf(h, logdet, params)
         
-        if isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
-            h = h.view(-1, *self.dim)
+#        if isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
+#            h = h.view(-1, *self.dim)
         if isinstance(self.mdl, iaf_modules.PixelCNN):
             h = h.view(-1, *self.dim)
         return h, logdet, context
@@ -384,14 +384,15 @@ class IAF_DDSF(BaseFlow):
         self.out_to_dsparams.weight.data.uniform_(-0.001, 0.001)
         self.out_to_dsparams.bias.data.uniform_(0.0, 0.0)
         
+            
     def forward(self, inputs):
         x, logdet, context = inputs
         out, _ = self.mdl((x, context))
-        if isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
-            out = out.permute(0,3,1,2).contiguous()
-            size = [int(y) for y in out.size()]
-            out = out.view(-1, size[1], size[2]*size[3])
-        elif isinstance(self.mdl, iaf_modules.PixelCNN):
+#        if isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
+#            out = out.permute(0,3,1,2).contiguous()
+#            size = [int(y) for y in out.size()]
+#            out = out.view(-1, size[1], size[2]*size[3])
+        if isinstance(self.mdl, iaf_modules.PixelCNN):
             out = out.permute(0,3,1,2).contiguous()
             size = [int(y) for y in out.size()]
             out = out.view(-1, size[1], size[2]*size[3])
@@ -429,10 +430,10 @@ class IAF_DDSF(BaseFlow):
             start = end
         
         assert out_dim == 1, 'last dsf out dim should be 1'
-        if isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
-            return h[:,:,0].view(-1, *self.dim), \
-                    lgd[:,:,0,0].sum(1) + logdet, context
-        elif isinstance(self.mdl, iaf_modules.PixelCNN):
+#        if isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
+#            return h[:,:,0].view(-1, *self.dim), \
+#                    lgd[:,:,0,0].sum(1) + logdet, context
+        if isinstance(self.mdl, iaf_modules.PixelCNN):
             return h[:,:,0].view(-1, *self.dim), \
                     lgd[:,:,0,0].sum(1) + logdet, context
         else:
@@ -464,10 +465,11 @@ class DenseSigmoidFlow(BaseFlow):
         
         
     def forward(self, x, logdet, dsparams):
+        inv = np.log(np.exp(1-nn_.delta)-1) 
         ndim = self.hidden_dim
         pre_u = self.u_[None,None,:,:]+dsparams[:,:,-self.in_dim:][:,:,None,:]
         pre_w = self.w_[None,None,:,:]+dsparams[:,:,2*ndim:3*ndim][:,:,None,:]
-        a = self.act_a(dsparams[:,:,0*ndim:1*ndim])
+        a = self.act_a(dsparams[:,:,0*ndim:1*ndim]+inv)
         b = self.act_b(dsparams[:,:,1*ndim:2*ndim])
         w = self.act_w(pre_w)
         u = self.act_u(pre_u)
