@@ -183,10 +183,11 @@ class IAF(BaseFlow):
 #            mean = mean.permute(0,3,1,2)
 #            lstd = lstd.permute(0,3,1,2)
         elif isinstance(self.mdl, iaf_modules.PixelCNN):
-            mean, lstd = torch.split(out, self.dim[0], -1)
-            mean = mean.permute(0,3,1,2)
-            lstd = lstd.permute(0,3,1,2)
-            
+            dx = [int(d) for d in x.size()]
+            out = out.contiguous().view(
+                dx[0],dx[2],dx[3],dx[1],2).permute(4,0,3,1,2)
+            mean, lstd = out[0], out[1]
+
         std = self.realify(lstd)
         
         if self.realify == nn_.softplus:
@@ -258,15 +259,21 @@ class IAF_DSF(BaseFlow):
 #            dsparams = self.out_to_dsparams(out).permute(0,2,1)
 #            nparams = self.num_ds_dim*3
         elif isinstance(self.mdl, iaf_modules.PixelCNN):
-            nparams = self.num_ds_dim*3
-            size = [int(y) for y in out.size()]
-            dsparams = out.permute(0,3,1,2).view(
-                size[0],nparams,-1).permute(0,2,1)
+            nparams = 3*self.num_ds_layers*self.num_ds_dim
+            dx = [int(d) for d in x.size()]
+            out = out.contiguous().view(
+                dx[0],dx[2],dx[3],dx[1],nparams).permute(4,0,3,1,2)
+            dsparams = out.contiguous().view(dx[0],-1,nparams)
+            
+            #size = [int(y) for y in out.size()]
+            #dsparams = out.permute(0,3,1,2).view(
+            #    size[0],nparams,-1).permute(0,2,1)
             
             
         
         
         h = x.view(x.size(0), -1)
+        nparams = 3*self.num_ds_dim
         for i in range(self.num_ds_layers):
             params = dsparams[:,:,i*nparams:(i+1)*nparams]
             h, logdet = self.sf(h, logdet, params)
@@ -330,22 +337,7 @@ class IAF_DDSF(BaseFlow):
         self.num_ds_dim = num_ds_dim
         self.num_ds_layers = num_ds_layers
 
-        if type(dim) is int:
-            self.mdl = iaf_modules.cMADE(
-                    dim, hid_dim, context_dim, num_layers, 
-                    num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
-                    activation, fixed_order)
-        else:
-            self.mdl = pcnn(
-                dim[0], hid_dim, num_layers, 
-                num_outlayers=num_ds_multiplier*(hid_dim/dim[0])*num_ds_layers)
-          
-            
-        
-#        self.made = iaf_modules.cMADE(
-#                dim, hid_dim, context_dim, num_layers, 
-#                num_ds_multiplier*(hid_dim/dim)*num_ds_layers,
-#                activation, fixed_order)
+    
         
         num_dsparams = 0
         for i in range(num_ds_layers):
@@ -367,20 +359,26 @@ class IAF_DDSF(BaseFlow):
                             DenseSigmoidFlow(in_dim,
                                              num_ds_dim,
                                              out_dim))
+            
         if type(dim) is int:
+            self.mdl = iaf_modules.cMADE(
+                    dim, hid_dim, context_dim, num_layers, 
+                    num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
+                    activation, fixed_order)
             self.out_to_dsparams = nn.Conv1d(
                 num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
                 num_dsparams, 1)
+            self.reset_parameters_made()
         else:
-            self.out_to_dsparams = nn.Conv1d(
-                num_ds_multiplier*(hid_dim/dim[0])*num_ds_layers, 
-                num_dsparams, 1)
+            self.mdl = pcnn(
+                dim[0], hid_dim, num_layers, 
+                num_outlayers=num_dsparams)
+          
+        self.num_dsparams = num_dsparams
         
-        
-        self.reset_parameters()
         
 
-    def reset_parameters(self):
+    def reset_parameters_made(self):
         self.out_to_dsparams.weight.data.uniform_(-0.001, 0.001)
         self.out_to_dsparams.bias.data.uniform_(0.0, 0.0)
         
@@ -393,22 +391,35 @@ class IAF_DDSF(BaseFlow):
 #            size = [int(y) for y in out.size()]
 #            out = out.view(-1, size[1], size[2]*size[3])
         if isinstance(self.mdl, iaf_modules.PixelCNN):
-            out = out.permute(0,3,1,2).contiguous()
-            size = [int(y) for y in out.size()]
-            out = out.view(-1, size[1], size[2]*size[3])
+#            out = out.permute(0,3,1,2).contiguous()
+#            size = [int(y) for y in out.size()]
+#            out = out.view(-1, size[1], size[2]*size[3])
+#            
+            cuda = self.mdl.blocks[0].v0.direction.is_cuda
+           
+            nparams = self.num_dsparams
+            
+            dx = [int(d) for d in x.size()]
+            out = out.contiguous().view(
+                dx[0],dx[2],dx[3],dx[1],nparams).permute(0,3,1,2,4)
+            dsparams = out.contiguous().view(dx[0],-1,nparams)
         else:
+            cuda = self.out_to_dsparams.weight.is_cuda
+            
             out = out.permute(0,2,1)
-        dsparams = self.out_to_dsparams(out).permute(0,2,1)
+            dsparams = self.out_to_dsparams(out).permute(0,2,1)
         
         
         start = 0
 
         h = x.view(x.size(0),-1)[:,:,None]
         n = x.size(0)
-        dim = self.dim if type(self.dim) is int else self.dim[0]
+        dim = self.dim if type(self.dim) is int else \
+            np.prod([int(d) for d in dx[1:]])
         lgd = Variable(torch.from_numpy(
             np.zeros((n, dim, 1, 1)).astype('float32')))
-        if self.out_to_dsparams.weight.is_cuda:
+        
+        if cuda:
             lgd = lgd.cuda()
         for i in range(self.num_ds_layers):
             if i == 0:
@@ -430,6 +441,7 @@ class IAF_DDSF(BaseFlow):
             start = end
         
         assert out_dim == 1, 'last dsf out dim should be 1'
+        assert end == self.num_dsparams, 'num dsparams mismatch'
 #        if isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
 #            return h[:,:,0].view(-1, *self.dim), \
 #                    lgd[:,:,0,0].sum(1) + logdet, context
@@ -536,29 +548,34 @@ if __name__ == '__main__':
             torch.from_numpy(np.random.rand(2).astype('float32')))
     
     
-    mdl = IAF(784, 1000, 200, 3)
-    
     inputs = (inp, lgd, con)
-    print mdl(inputs)[0].size()
     
-    
+    mdl = IAF(784, 1000, 200, 3)
+    print mdl(inputs)[0].size()    
     mdl = IAF_DSF(784, 1000, 200, 3)
     print mdl(inputs)[0].size()
+    mdl = IAF_DSF(784, 1000, 200, 3, num_ds_layers=3)
+    print mdl(inputs)[0].size()
+    
     
     
     n = 2
     dim = 2
     num_ds_dim = 4
     num_in_dim = 1
-    dsf = DenseSigmoidFlow(num_in_dim,num_ds_dim,num_ds_dim)
+    num_ds_layers = 2
     
-    mdl = IAF_DSF(784, 1000, 200, 3, num_ds_layers=2)
-    print mdl(inputs)[0].size()
-    
-    
-    
-    mdl = IAF_DSF([2,28,28], 6, 2, 3)
     lgd = utils.varify(np.random.randn(4).astype('float32'))
     x = utils.varify(np.random.randn(4,2,28,28).astype('float32'))
-    #print mdl.mdl.pic(x).size()
+    
+    
+    mdl = IAF([2,28,28], 6, 2, 3)
+    print mdl((x, lgd, 0))[0].size()
+    mdl = IAF_DSF([2,28,28], 6, 2, 3, 
+                  num_ds_dim = num_ds_dim, 
+                  num_ds_layers=num_ds_layers)
+    print mdl((x, lgd, 0))[0].size()
+    mdl = IAF_DDSF([2,28,28], 6, 2, 3, 
+                  num_ds_dim = num_ds_dim, 
+                  num_ds_layers=num_ds_layers)
     print mdl((x, lgd, 0))[0].size()
