@@ -22,9 +22,6 @@ import numpy as np
 sum_from_one = nn_.sum_from_one
 
 
-pcnn = iaf_modules.PixelCNN
-
-
 class BaseFlow(Module):
     
     
@@ -178,14 +175,6 @@ class IAF(BaseFlow):
         if isinstance(self.mdl, iaf_modules.cMADE):
             mean = out[:,:,0]
             lstd = out[:,:,1]
-#        elif isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
-#            mean, lstd = torch.split(out, self.dim[0], -1)
-#            mean = mean.permute(0,3,1,2)
-#            lstd = lstd.permute(0,3,1,2)
-        elif isinstance(self.mdl, iaf_modules.PixelCNN):
-            mean, lstd = torch.split(out, self.dim[0], -1)
-            mean = mean.permute(0,3,1,2)
-            lstd = lstd.permute(0,3,1,2)
             
         std = self.realify(lstd)
         
@@ -251,30 +240,13 @@ class IAF_DSF(BaseFlow):
             out = out.permute(0,2,1)
             dsparams = self.out_to_dsparams(out).permute(0,2,1)
             nparams = self.num_ds_dim*3
-#        elif isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
-#            out = out.permute(0,3,1,2).contiguous()
-#            size = [int(y) for y in out.size()]
-#            out = out.view(-1, size[1], size[2]*size[3])
-#            dsparams = self.out_to_dsparams(out).permute(0,2,1)
-#            nparams = self.num_ds_dim*3
-        elif isinstance(self.mdl, iaf_modules.PixelCNN):
-            nparams = self.num_ds_dim*3
-            size = [int(y) for y in out.size()]
-            dsparams = out.permute(0,3,1,2).view(
-                size[0],nparams,-1).permute(0,2,1)
-            
-            
-        
+      
         
         h = x.view(x.size(0), -1)
         for i in range(self.num_ds_layers):
             params = dsparams[:,:,i*nparams:(i+1)*nparams]
             h, logdet = self.sf(h, logdet, params)
-        
-#        if isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
-#            h = h.view(-1, *self.dim)
-        if isinstance(self.mdl, iaf_modules.PixelCNN):
-            h = h.view(-1, *self.dim)
+       
         return h, logdet, context
 
 
@@ -388,16 +360,7 @@ class IAF_DDSF(BaseFlow):
     def forward(self, inputs):
         x, logdet, context = inputs
         out, _ = self.mdl((x, context))
-#        if isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
-#            out = out.permute(0,3,1,2).contiguous()
-#            size = [int(y) for y in out.size()]
-#            out = out.view(-1, size[1], size[2]*size[3])
-        if isinstance(self.mdl, iaf_modules.PixelCNN):
-            out = out.permute(0,3,1,2).contiguous()
-            size = [int(y) for y in out.size()]
-            out = out.view(-1, size[1], size[2]*size[3])
-        else:
-            out = out.permute(0,2,1)
+        out = out.permute(0,2,1)
         dsparams = self.out_to_dsparams(out).permute(0,2,1)
         
         
@@ -430,14 +393,7 @@ class IAF_DDSF(BaseFlow):
             start = end
         
         assert out_dim == 1, 'last dsf out dim should be 1'
-#        if isinstance(self.mdl, iaf_modules.PixelCNNplusplus):
-#            return h[:,:,0].view(-1, *self.dim), \
-#                    lgd[:,:,0,0].sum(1) + logdet, context
-        if isinstance(self.mdl, iaf_modules.PixelCNN):
-            return h[:,:,0].view(-1, *self.dim), \
-                    lgd[:,:,0,0].sum(1) + logdet, context
-        else:
-            return h[:,:,0], lgd[:,:,0,0].sum(1) + logdet, context
+        return h[:,:,0], lgd[:,:,0,0].sum(1) + logdet, context
             
             
 
@@ -556,9 +512,3 @@ if __name__ == '__main__':
     print mdl(inputs)[0].size()
     
     
-    
-    mdl = IAF_DSF([2,28,28], 6, 2, 3)
-    lgd = utils.varify(np.random.randn(4).astype('float32'))
-    x = utils.varify(np.random.randn(4,2,28,28).astype('float32'))
-    #print mdl.mdl.pic(x).size()
-    print mdl((x, lgd, 0))[0].size()
