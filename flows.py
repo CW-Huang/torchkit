@@ -152,9 +152,6 @@ class IAF(BaseFlow):
                     dim, hid_dim, context_dim, num_layers, 2, 
                     activation, fixed_order)
             self.reset_parameters()
-        else:
-            self.mdl = pcnn(
-                    dim[0], hid_dim, num_layers, num_outlayers=2)
         
         
     def reset_parameters(self):
@@ -212,10 +209,6 @@ class IAF_DSF(BaseFlow):
                 num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
                 3*num_ds_layers*num_ds_dim, 1)
             self.reset_parameters()
-        else:
-            self.mdl = pcnn(
-                dim[0], hid_dim, num_layers, 
-                num_outlayers=3*num_ds_layers*num_ds_dim)
         
         
         self.sf = SigmoidFlow(num_ds_dim)
@@ -307,17 +300,6 @@ class IAF_DDSF(BaseFlow):
                     dim, hid_dim, context_dim, num_layers, 
                     num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
                     activation, fixed_order)
-        else:
-            self.mdl = pcnn(
-                dim[0], hid_dim, num_layers, 
-                num_outlayers=num_ds_multiplier*(hid_dim/dim[0])*num_ds_layers)
-          
-            
-        
-#        self.made = iaf_modules.cMADE(
-#                dim, hid_dim, context_dim, num_layers, 
-#                num_ds_multiplier*(hid_dim/dim)*num_ds_layers,
-#                activation, fixed_order)
         
         num_dsparams = 0
         for i in range(num_ds_layers):
