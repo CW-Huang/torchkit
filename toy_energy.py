@@ -15,6 +15,7 @@ import torch as T
 from utils import log_normal, varify
 
 import torch
+cuda = torch.cuda.is_available()
 from torch.autograd import Variable
 import torch.nn.functional as F
 import numpy as np
@@ -68,6 +69,10 @@ def U4(Z, small=False):
                                 [0., -5.]],
                                 dtype='float32'))
         lv = Variable(np.log(torch.ones(1)*1.5))
+    
+    if cuda:
+        mean = mean.cuda()
+        lv = lv.cuda()
     
     d1 = log_normal(Z, mean[None,0,:], lv).sum(1)+np.log(0.1)
     d2 = log_normal(Z[:,:], mean[None,1,:], lv).sum(1)+np.log(0.3)
