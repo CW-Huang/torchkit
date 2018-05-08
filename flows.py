@@ -59,6 +59,7 @@ class LinearFlow(BaseFlow):
         
         self.dim = dim
         self.context_dim = context_dim
+
         
         if type(dim) is int:
             dim_ = dim
@@ -71,19 +72,29 @@ class LinearFlow(BaseFlow):
         self.reset_parameters()
         
     def reset_parameters(self):
-        self.mean.dot_01.scale.data.uniform_(-0.001, 0.001)
-        self.mean.dot_h1.scale.data.uniform_(-0.001, 0.001)
-        self.mean.dot_01.bias.data.uniform_(-0.001, 0.001)
-        self.mean.dot_h1.bias.data.uniform_(-0.001, 0.001)
-        self.lstd.dot_01.scale.data.uniform_(-0.001, 0.001)
-        self.lstd.dot_h1.scale.data.uniform_(-0.001, 0.001)
-        if self.realify == nn_.softplus:
-            inv = np.log(np.exp(1-nn_.delta)-1) * 0.5
-            self.lstd.dot_01.bias.data.uniform_(inv-0.001, inv+0.001)
-            self.lstd.dot_h1.bias.data.uniform_(inv-0.001, inv+0.001)
-        else:
-            self.lstd.dot_01.bias.data.uniform_(-0.001, 0.001)
-            self.lstd.dot_h1.bias.data.uniform_(-0.001, 0.001)
+        if isinstance(self.mean, nn_.ResLinear):
+            self.mean.dot_01.scale.data.uniform_(-0.001, 0.001)
+            self.mean.dot_h1.scale.data.uniform_(-0.001, 0.001)
+            self.mean.dot_01.bias.data.uniform_(-0.001, 0.001)
+            self.mean.dot_h1.bias.data.uniform_(-0.001, 0.001)
+            self.lstd.dot_01.scale.data.uniform_(-0.001, 0.001)
+            self.lstd.dot_h1.scale.data.uniform_(-0.001, 0.001)
+            if self.realify == nn_.softplus:
+                inv = np.log(np.exp(1-nn_.delta)-1) * 0.5
+                self.lstd.dot_01.bias.data.uniform_(inv-0.001, inv+0.001)
+                self.lstd.dot_h1.bias.data.uniform_(inv-0.001, inv+0.001)
+            else:
+                self.lstd.dot_01.bias.data.uniform_(-0.001, 0.001)
+                self.lstd.dot_h1.bias.data.uniform_(-0.001, 0.001)
+        elif isinstance(self.mean, nn.Linear):
+            self.mean.weight.data.uniform_(-0.001, 0.001)
+            self.mean.bias.data.uniform_(-0.001, 0.001)
+            self.lstd.weight.data.uniform_(-0.001, 0.001)
+            if self.realify == nn_.softplus:
+                inv = np.log(np.exp(1-nn_.delta)-1) * 0.5
+                self.lstd.bias.data.uniform_(inv-0.001, inv+0.001)
+            else:
+                self.lstd.bias.data.uniform_(-0.001, 0.001)
 
 
     def forward(self, inputs):
