@@ -16,7 +16,7 @@ delta = 1e-7
 sigmoid = lambda x:torch.nn.functional.sigmoid(x) * (1-delta) + 0.5 * delta
 
 c = - 0.5 * np.log(2*np.pi)
-def log_normal(x, mean, log_var, eps=0.0001):
+def log_normal(x, mean, log_var, eps=0.00001):
     return - (x-mean) ** 2 / (2. * torch.exp(log_var) + eps) - log_var/2. + c
     
 def bceloss(pi, x):
@@ -33,8 +33,29 @@ def categorical_kl(q, p, logq=None, logp=None):
         logp = torch.log(p)
     
     return (q * (logq - logp)).sum(1)
+
+
+def factorial_gaussian_crossentropy(mean_q, log_var_q, mean_p, log_var_p, 
+                                    eps=0.00001):
+    """
+    - E_q(log p)
+    """
+    return (
+        log_var_p + (mean_q**2 +
+                     mean_p**2 -
+                     mean_q*mean_p*2 + 
+                     torch.exp(log_var_q)) / (torch.exp(log_var_p) + eps) 
+    )/2. - c
+
+
+
+def factorial_gaussian_entropy(log_var_q):
+    """
+    - E_q(log q)
+    """
+    return (1+log_var_q)/2. - c
     
-    
+
 def varify(x):
     return torch.autograd.Variable(torch.from_numpy(x))
 
