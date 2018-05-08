@@ -41,6 +41,13 @@ def softmax(x, dim=-1):
 sum1 = lambda x: x.sum(1)
 sum_from_one = lambda x: sum_from_one(sum1(x)) if len(x.size())>2 else sum1(x)
     
+
+
+class Sigmoid(Module):
+    def forward(self, x):
+        return sigmoid(x)
+
+
 class WNlinear(Module):
 
     def __init__(self, in_features, out_features, 
@@ -307,7 +314,25 @@ class ResLinear(nn.Module):
         out_skip = input if self.same_dim else self.dot_01(input)
         return out_nonlinear + out_skip
 
+
+
+class GatingLinear(nn.Module):
+    
+    def __init__(
+            self, in_features, out_features, oper=WNlinear, **kwargs):
+        super(GatingLinear, self).__init__()
         
+        
+        self.dot = oper(in_features, out_features, **kwargs)
+        self.gate = oper(in_features, out_features, **kwargs)
+        
+    def forward(self, input):
+        h = self.dot(input)
+        s = sigmoid(self.gate(input))
+        return s * h
+
+        
+    
     
 class Reshape(nn.Module):
     
