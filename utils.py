@@ -18,7 +18,11 @@ sigmoid = lambda x:torch.nn.functional.sigmoid(x) * (1-delta) + 0.5 * delta
 c = - 0.5 * np.log(2*np.pi)
 def log_normal(x, mean, log_var, eps=0.00001):
     return - (x-mean) ** 2 / (2. * torch.exp(log_var) + eps) - log_var/2. + c
-    
+
+def log_laplace(x, mean, log_scale, eps=0.00001):
+    return - torch.abs(x-mean) / (torch.exp(log_scale) + eps) - log_scale - np.log(2)
+
+
 def bceloss(pi, x):
     return - (x * torch.log(pi) + (1-x) * torch.log(1-pi))
 
