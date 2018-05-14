@@ -328,7 +328,7 @@ class GatingLinear(nn.Module):
         
     def forward(self, input):
         h = self.dot(input)
-        s = sigmoid(self.gate(input))
+        s = sigmoid_(self.gate(input))
         return s * h
 
         
