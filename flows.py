@@ -113,39 +113,29 @@ class LinearFlow(BaseFlow):
 
 
 class BlockAffineFlow(Module):
-    # RealNVP
-
-    def __init__(self, dim, context_dim, hid_dim, 
-                 mask=0, realify=nn_.softplus):
+    # NICE, volume preserving
+    # x2' = x2 + nonLinfunc(x1)
+    
+    def __init__(self, dim1, dim2, context_dim, hid_dim, activation=nn.ELU()):
         super(BlockAffineFlow, self).__init__()
-        self.mask = mask
-        self.dim = dim
-        self.realify = realify
-        self.gpu = True
-        
-        self.hid = nn_.WNBilinear(dim, context_dim, hid_dim)
-        self.mean = nn_.ResLinear(hid_dim, dim)
-        self.lstd = nn_.ResLinear(hid_dim, dim)
+        self.dim1 = dim1
+        self.dim2 = dim2
+        self.actv = activation
 
+        
+        self.hid = nn_.WNBilinear(dim1, context_dim, hid_dim)
+        self.shift = nn_.WNBilinear(hid_dim, context_dim, dim2)
+        
     def forward(self,inputs):
         x, logdet, context = inputs
-        mask = Variable(torch.zeros(1, self.dim))
-        if self.gpu:
-            mask = mask.cuda()
+        x1, x2 = x
+        
+        hid = self.actv(self.hid(x1, context))
+        shift = self.shift(hid, context)
+        
+        x2_ = x2 + shift
 
-        if self.mask:
-            mask[:, self.dim/2:].data += 1
-        else:
-            mask[:, :self.dim/2].data += 1
-
-        hid = self.hid(x*mask, context)
-        mean = self.mean(hid)*(-mask+1) + self.mean.dot_h1.bias
-        lstd = self.lstd(hid)*(-mask+1) + self.lstd.dot_h1.bias
-        std = self.realify(lstd)
-
-        x_ = mean + std * x
-        logdet_ = sum_from_one(torch.log(std)) + logdet
-        return x_, logdet_, context
+        return (x1, x2_), 0, context
     
     
 class IAF(BaseFlow):
