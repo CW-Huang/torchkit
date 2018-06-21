@@ -16,6 +16,7 @@ from torch.nn import Module
 
 import nn as nn_
 
+from functools import reduce
 
 # aliasing
 N_ = None
@@ -97,7 +98,7 @@ class MADE(Module):
         
         ms, rx = get_masks(dim, hid_dim, num_layers, num_outlayers,
                            fixed_order)
-        ms = map(torch.from_numpy, ms)
+        ms = [m for m in map(torch.from_numpy, ms)]
         self.rx = rx
         
         sequels = list()
@@ -146,7 +147,7 @@ class cMADE(Module):
         
         ms, rx = get_masks(dim, hid_dim, num_layers, num_outlayers,
                            fixed_order)
-        ms = map(torch.from_numpy, ms)
+        ms = [m for m in map(torch.from_numpy, ms)]
         self.rx = rx
         
         sequels = list()
@@ -190,13 +191,13 @@ if __name__ == '__main__':
             torch.from_numpy(np.random.rand(2,784).astype('float32')))
     input = inp*2
     mdl = MADE(784, 1000, 3, 2)
-    print mdl(input).size()
+    print(mdl(input).size())
     
     mdl = cMADE(784, 1000, 200, 3, 2)
     con = torch.autograd.Variable(
             torch.from_numpy(np.random.rand(2,200).astype('float32')))
     inputs = (input, con)
-    print mdl(inputs)[0].size()
+    print(mdl(inputs)[0].size())
     
     
     
