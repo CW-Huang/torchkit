@@ -201,13 +201,16 @@ class IAF_DSF(BaseFlow):
         self.num_ds_dim = num_ds_dim
         self.num_ds_layers = num_ds_layers
         
+        print(num_ds_multiplier*(hid_dim%dim))
+        print(num_ds_multiplier,hid_dim,dim)
+
         if type(dim) is int:
             self.mdl = iaf_modules.cMADE(
                     dim, hid_dim, context_dim, num_layers, 
-                    num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
+                    num_ds_multiplier*(hid_dim//dim)*num_ds_layers, 
                     activation, fixed_order)
             self.out_to_dsparams = nn.Conv1d(
-                num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
+                num_ds_multiplier*(hid_dim//dim)*num_ds_layers, 
                 3*num_ds_layers*num_ds_dim, 1)
             self.reset_parameters()
         
@@ -462,6 +465,88 @@ class FlipFlow(BaseFlow):
         return output, logdet, context
     
 
+
+class Sigmoid(BaseFlow):
+    
+    def __init__(self):
+        super(Sigmoid, self).__init__()
+        
+    def forward(self, inputs):
+        if len(inputs) == 2:
+            input, logdet = inputs
+        elif len(inputs) == 3:
+            input, logdet, context = inputs
+        else:
+            raise(Exception('inputs length not correct'))
+        
+        output = F.sigmoid(input)
+        logdet += sum_from_one(- F.softplus(input) - F.softplus(-input))
+        
+        
+        if len(inputs) == 2:
+            return output, logdet
+        elif len(inputs) == 3:
+            return output, logdet, context
+        else:
+            raise(Exception('inputs length not correct'))
+
+
+
+class Shift(BaseFlow):
+    
+    def __init__(self, b):
+        self.b = b
+        super(Shift, self).__init__()
+        
+    def forward(self, inputs):
+        if len(inputs) == 2:
+            input, logdet = inputs
+        elif len(inputs) == 3:
+            input, logdet, context = inputs
+        else:
+            raise(Exception('inputs length not correct'))
+        
+        output = input + self.b
+        
+        
+        if len(inputs) == 2:
+            return output, logdet
+        elif len(inputs) == 3:
+            return output, logdet, context
+        else:
+            raise(Exception('inputs length not correct'))
+        
+        
+
+class Scale(BaseFlow):
+    
+    def __init__(self, g):
+        self.g = g
+        super(Scale, self).__init__()
+        
+    def forward(self, inputs):
+        if len(inputs) == 2:
+            input, logdet = inputs
+        elif len(inputs) == 3:
+            input, logdet, context = inputs
+        else:
+            raise(Exception('inputs length not correct'))
+        
+        output = input * self.g
+        logdet += np.log(np.abs(self.g)) * sum(input.size()[1:])
+        
+        
+        if len(inputs) == 2:
+            return output, logdet
+        elif len(inputs) == 3:
+            return output, logdet, context
+        else:
+            raise(Exception('inputs length not correct'))
+        
+        
+    
+    
+
 if __name__ == '__main__':
     
     
@@ -478,11 +563,11 @@ if __name__ == '__main__':
     mdl = IAF(784, 1000, 200, 3)
     
     inputs = (inp, lgd, con)
-    print mdl(inputs)[0].size()
+    print(mdl(inputs)[0].size())
     
     
     mdl = IAF_DSF(784, 1000, 200, 3)
-    print mdl(inputs)[0].size()
+    print(mdl(inputs)[0].size())
     
     
     n = 2
@@ -492,6 +577,6 @@ if __name__ == '__main__':
     dsf = DenseSigmoidFlow(num_in_dim,num_ds_dim,num_ds_dim)
     
     mdl = IAF_DSF(784, 1000, 200, 3, num_ds_layers=2)
-    print mdl(inputs)[0].size()
+    print(mdl(inputs)[0].size())
     
     

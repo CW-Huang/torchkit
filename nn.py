@@ -414,5 +414,5 @@ if __name__ == '__main__':
     con = torch.autograd.Variable(
             torch.from_numpy(np.random.rand(2,3).astype('float32')))
     
-    print mdl((inp, con))[0].size()
+    print(mdl((inp, con))[0].size())
     
