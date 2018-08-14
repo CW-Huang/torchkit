@@ -25,7 +25,7 @@ sum_from_one = nn_.sum_from_one
 class BaseFlow(Module):
     
     
-    def sample(self, n=1, context=None):
+    def sample(self, n=1, context=None, **kwargs):
         dim = self.dim
         if isinstance(self.dim, int):
             dim = [dim,]
@@ -201,8 +201,7 @@ class IAF_DSF(BaseFlow):
         self.num_ds_dim = num_ds_dim
         self.num_ds_layers = num_ds_layers
         
-        print(num_ds_multiplier*(hid_dim%dim))
-        print(num_ds_multiplier,hid_dim,dim)
+        
 
         if type(dim) is int:
             self.mdl = iaf_modules.cMADE(
@@ -533,7 +532,7 @@ class Scale(BaseFlow):
             raise(Exception('inputs length not correct'))
         
         output = input * self.g
-        logdet += np.log(np.abs(self.g)) * sum(input.size()[1:])
+        logdet += np.log(np.abs(self.g)) * np.prod(input.size()[1:])
         
         
         if len(inputs) == 2:
