@@ -191,6 +191,7 @@ class IAF(BaseFlow):
 
 class IAF_DSF(BaseFlow):
     
+    mollify=0.0
     def __init__(self, dim, hid_dim, context_dim, num_layers,
                  activation=nn.ELU(), fixed_order=False,
                  num_ds_dim=4, num_ds_layers=1, num_ds_multiplier=3):
@@ -237,11 +238,11 @@ class IAF_DSF(BaseFlow):
             dsparams = self.out_to_dsparams(out).permute(0,2,1)
             nparams = self.num_ds_dim*3
       
-        
+        mollify = self.mollify
         h = x.view(x.size(0), -1)
         for i in range(self.num_ds_layers):
             params = dsparams[:,:,i*nparams:(i+1)*nparams]
-            h, logdet = self.sf(h, logdet, params)
+            h, logdet = self.sf(h, logdet, params, mollify)
        
         return h, logdet, context
 
@@ -258,12 +259,15 @@ class SigmoidFlow(BaseFlow):
         self.act_b = lambda x: x
         self.act_w = lambda x: nn_.softmax(x,dim=2)
         
-    def forward(self, x, logdet, dsparams):
+    def forward(self, x, logdet, dsparams, mollify=0.0):
         
         ndim = self.num_ds_dim
-        a = self.act_a(dsparams[:,:,0*ndim:1*ndim])
-        b = self.act_b(dsparams[:,:,1*ndim:2*ndim])
+        a_ = self.act_a(dsparams[:,:,0*ndim:1*ndim])
+        b_ = self.act_b(dsparams[:,:,1*ndim:2*ndim])
         w = self.act_w(dsparams[:,:,2*ndim:3*ndim])
+        
+        a = a_ * (1-mollify) + 1.0 * mollify
+        b = b_ * (1-mollify) + 0.0 * mollify
         
         pre_sigm = a * x[:,:,None] + b
         sigm = torch.sigmoid(pre_sigm)
@@ -280,8 +284,8 @@ class SigmoidFlow(BaseFlow):
         logdet_ = logj + np.log(1-nn_.delta) - \
         (log(x_pre_clipped) + log(-x_pre_clipped+1))
         logdet = logdet_.sum(1) + logdet
-            
-            
+        
+        
         return xnew, logdet
         
         
