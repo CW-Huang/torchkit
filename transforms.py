@@ -37,13 +37,14 @@ class realify(object):
     - pass through logit
     """
 
-    def __init__(self, delta=0.01):
+    def __init__(self, delta=0.01, noise=1.0):
         self.delta = delta
+        self.noise = noise
 
     def __call__(self, x):
 
         x_ = x * 255.
-        noise = torch.zeros_like(x).uniform_(0,1)
+        noise = torch.zeros_like(x).uniform_(0,self.noise)
         x_ += noise
         a, b = x_.min(), x_.max()
         x_ -= a
