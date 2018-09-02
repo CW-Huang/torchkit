@@ -55,6 +55,25 @@ class realify(object):
         return logit(x_)
 
 
+class noisify(object):
+    """ 
+    - rescale [0,1] to [0,255]
+    - add uniform(0,1) noise
+    - rescale to [0,1]
+    """
+
+    def __init__(self, noise=1.0):
+        self.noise = noise
+
+    def __call__(self, x):
+
+        x_ = x * 255.
+        noise = torch.zeros_like(x).uniform_(0,self.noise)
+        x_ += noise
+        
+        return x_/256.
+
+
 
 
 
