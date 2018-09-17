@@ -74,6 +74,17 @@ class noisify(object):
         return x_/256.
 
 
+class scaleshift(object):
+    """ y = ax + b
+    """
+
+    def __init__(self, a=1.0, b=0.0):
+        self.a = a
+        self.b = b
+
+    def __call__(self, x):
+        return x * self.a + self.b
+
 
 
 

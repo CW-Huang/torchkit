@@ -92,3 +92,8 @@ def log_mean_exp_np(A, axis=-1):
     return log_sum_exp_np(A, axis, sum_op=np.mean)
     
     
+def mul_grad_value(parameters, mul):
+    if isinstance(parameters, torch.Tensor):
+        parameters = [parameters]
+    for p in parameters:
+        p.grad.data.mul_(mul)

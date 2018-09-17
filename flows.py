@@ -494,6 +494,30 @@ class Sigmoid(BaseFlow):
             raise(Exception('inputs length not correct'))
 
 
+class Logit(BaseFlow):
+
+    def __init__(self):
+        super(Logit, self).__init__()
+
+    def forward(self, inputs):
+        if len(inputs) == 2:
+            input, logdet = inputs
+        elif len(inputs) == 3:
+            input, logdet, context = inputs
+        else:
+            raise(Exception('inputs length not correct'))
+
+        output = log(input) - log(1-input)
+        logdet -= sum_from_one(log(input) + log(-input+1))        
+      
+        if len(inputs) == 2:
+            return output, logdet
+        elif len(inputs) == 3:
+            return output, logdet, context
+        else:
+            raise(Exception('inputs length not correct'))
+
+
 
 class Shift(BaseFlow):
     
@@ -510,7 +534,6 @@ class Shift(BaseFlow):
             raise(Exception('inputs length not correct'))
         
         output = input + self.b
-        
         
         if len(inputs) == 2:
             return output, logdet
