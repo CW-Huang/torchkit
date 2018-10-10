@@ -151,7 +151,7 @@ class BinaryPrior(nn.Module):
     def sample(self, n):
         prob = self.sigmoid(self.logits)
         spl = Variable(
-            (torch.rand(n,self.dim) < prob).float()) * 2.0 - 1.0
+            (torch.rand(n,self.dim).to(device=prob.device, dtype=prob.dtype) < prob).float()) * 2.0 - 1.0
         return spl
     
     def evaluate(self, z):
