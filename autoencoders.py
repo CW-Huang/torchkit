@@ -9,6 +9,8 @@ Created on Sun Sep 16 18:50:15 2018
 
 import nn as nn_
 import torch.nn as nn
+from torch.nn import Parameter
+from torch.autograd import Variable
 import torch
 from utils import bceloss
 
@@ -138,7 +140,24 @@ class BinaryNonLinear(nn.Module):
     
     
         
+class BinaryPrior(nn.Module):
+    
+    def __init__(self, dim):
+        super(BinaryPrior, self).__init__()
+        self.dim = dim
+        self.logits = Parameter(torch.zeros(dim))
+        self.sigmoid = nn.Sigmoid()
         
+    def sample(self, n):
+        prob = self.sigmoid(self.logits)
+        spl = Variable(
+            (torch.rand(n,self.dim) < prob).float()) * 2.0 - 1.0
+        return spl
+    
+    def evaluate(self, z):
+        prob = self.sigmoid(self.logits)
+        z = z * 0.5 + 0.5
+        return - nn_.sum_from_one(bceloss(prob, z))
     
     
 
