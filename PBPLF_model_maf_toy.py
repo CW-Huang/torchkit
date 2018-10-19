@@ -19,6 +19,7 @@ import flows
 import utils
 import matplotlib.pyplot as plt
 
+eps = 1.e-5
 
 
 class model(object):
@@ -26,28 +27,27 @@ class model(object):
     def __init__(self, sampler, n=64):
         self.mdl = nn_.SequentialFlow( 
                 flows.Sigmoid(),
-                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True), 
-                #flows.IAF(2, 64, 1, 2), 
-                flows.FlipFlow(1), 
-                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True), 
-                #flows.IAF(2, 64, 1, 2),
-                flows.FlipFlow(1), 
-                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True), 
-                #flows.IAF(2, 64, 1, 2),
-                flows.FlipFlow(1),
-                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True), 
-                #flows.IAF(2, 64, 1, 2), 
-                flows.FlipFlow(1), 
-                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True), 
-                #flows.IAF(2, 64, 1, 2),
+                #flows.IAF_DSF(2, 64, 1, 2),#, use_PBPLF=True), 
+                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
                 flows.FlipFlow(1), 
                 flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
-                flows.Logit())
+                flows.FlipFlow(1), 
+                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
+                flows.FlipFlow(1), 
+                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
+                flows.FlipFlow(1), 
+                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
+                flows.FlipFlow(1), 
+                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
+                #flows.Scale(1 - 2 * eps),
+                #flows.Shift(eps),
+                flows.Logit(),
+                )
                 #flows.IAF(2, 64, 1, 2))
 #        self.mdl = flows.IAF_DDSF(2, 64, 1, 3, 
 #                num_ds_dim=2, num_ds_layers=2)
         
-        self.optim = optim.Adam(self.mdl.parameters(), lr=0.005, 
+        self.optim = optim.Adam(self.mdl.parameters(), lr=0.000005, 
                                 betas=(0.9, 0.999))
         
         self.sampler = sampler
@@ -81,10 +81,6 @@ class model(object):
             
             loss = losses.mean()
 
-            if ((it + 1) % 1) == 0:
-                print 'Iteration: [%4d/%4d] loss: %.8f' % \
-                    (it+1, total, loss.data[0])
-            
             loss.backward()
             self.optim.step()
             
@@ -142,6 +138,7 @@ mix = Mixture([0.1, 0.3, 0.4, 0.2], [
             multivariate_normal([0, -5.])])
                     
 mdl = model(mix.rvs, n=64)
+#import ipdb; ipdb.set_trace()
 #input('x')
 mdl.train()
 
@@ -169,13 +166,14 @@ lgd = Variable(torch.FloatTensor(n**2).zero_())
 zeros = Variable(torch.FloatTensor(n**2, 2).zero_())
         
 
+
 ax = fig.add_subplot(1,2,2)
 Z = mdl.density(X, lgd, context, zeros).data.numpy().reshape(n,n)
 ax.pcolormesh(xx,yy,np.exp(Z))
 ax.axis('off')
 plt.xlim((-10,10))
 plt.ylim((-10,10))
-plt.savefig('100MoG_PBPLF.pdf',format='pdf')
+plt.savefig('test_PBPLF.pdf',format='pdf')
 
 
 

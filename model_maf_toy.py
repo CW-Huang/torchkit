@@ -163,7 +163,7 @@ ax.pcolormesh(xx,yy,np.exp(Z))
 ax.axis('off')
 plt.xlim((-10,10))
 plt.ylim((-10,10))
-#plt.savefig('100MoG.pdf',format='pdf')
+#plt.savefig('test_IAF.pdf',format='pdf')
 
 
 

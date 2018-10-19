@@ -298,7 +298,7 @@ class PartitionBasedPiecewiseLinearFlow(BaseFlow):
         super(PartitionBasedPiecewiseLinearFlow, self).__init__()
         self.num_z = num_z
         
-        self.act = lambda x: nn_.sigmoid(x) # TODO: maybe implement some sort of numerical stability by default here....
+        self.act = lambda x: nn_.sigmoid(x)
         
     def forward(self, x, logdet, dsparams, mollify=0.0):
         
@@ -306,14 +306,11 @@ class PartitionBasedPiecewiseLinearFlow(BaseFlow):
         r_x = self.act(dsparams[:,:,0*ndim:1*ndim])
         r_y = self.act(dsparams[:,:,1*ndim:2*ndim])
 
-        # a binary vector encoding which partition we're in
-        z = -1 * torch.ones_like(r_x[:,:,0])
-
         # the coordinates of the upper and lower corners of the current box (i.e. partition)
-        U_x = 1. * torch.ones_like(z)
-        U_y = 1. * torch.ones_like(z)
-        L_x = 0. * torch.ones_like(z)
-        L_y = 0. * torch.ones_like(z)
+        U_x = 1. * torch.ones_like(r_x[:,:,0])
+        U_y = 1. * torch.ones_like(r_x[:,:,0])
+        L_x = 0. * torch.ones_like(r_x[:,:,0])
+        L_y = 0. * torch.ones_like(r_x[:,:,0])
 
         for n in range(ndim): # find which subpartition we're in, and the coordinates of its corners
             # the coordinates of the new corner of the new subpartition
@@ -321,22 +318,24 @@ class PartitionBasedPiecewiseLinearFlow(BaseFlow):
             y_coord = L_y + r_y[:,:,n] * (U_y - L_y)
             
             # determine which subpartition x lands in (z=1 means it's in the upper subpartition)
-            z = (x > x_coord).float()
+            p = (x > x_coord).float()
             
             # if x is in the upper subpartition, we change the LOWER corner (and vice versa)
-            U_x = U_x * z + x_coord * (1 - z)
-            U_y = U_y * z + y_coord * (1 - z)
-            L_x = L_x * (1 - z) + x_coord * z
-            L_y = L_y * (1 - z) + y_coord * z
+            U_x = U_x * p + x_coord * (1 - p)
+            U_y = U_y * p + y_coord * (1 - p)
+            L_x = L_x * (1 - p) + x_coord * p
+            L_y = L_y * (1 - p) + y_coord * p
+            #import ipdb; ipdb.set_trace()
         
         slope = (U_y - L_y) / (U_x - L_x)
-        xnew = L_y + slope * (x - x_coord)
+        delta_x = (x - x_coord) * p + (x_coord - x) * (1 - p) 
+        y = L_y + slope * delta_x
         logdet_ = log(slope) # double check w/CW
         logdet = logdet_.sum(1) + logdet
         
         #import ipdb; ipdb.set_trace()
             
-        return xnew, logdet
+        return y, logdet
         
         
 PBPLF = PartitionBasedPiecewiseLinearFlow
@@ -568,6 +567,7 @@ class Logit(BaseFlow):
             return output, logdet, context
         else:
             raise(Exception('inputs length not correct'))
+
 
 
 
