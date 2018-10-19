@@ -266,6 +266,59 @@ class SigmoidFlow(BaseFlow):
         return xnew, logdet
         
         
+class PartitionBasePiecewiseLinearFlow(BaseFlow):
+   
+    def __init__(self, num_z=4):
+        super(PartitionBasePiecewiseLinearFlow, self).__init__()
+        self.num_z = num_z
+        
+        self.act = lambda x: nn_.sigmoid(x) # TODO: maybe implement some sort of numerical stability by default here....
+        
+    def forward(self, x, logdet, dsparams):
+        
+        ndim = self.num_z
+        r_x = self.act(dsparams[:,:,0*ndim:1*ndim])
+        r_y = self.act(dsparams[:,:,1*ndim:2*ndim])
+
+        # TODO: NTS: we don't need the keep whole vectors for z or the corners around...
+
+        # a binary vector encoding which partition we're in
+        z = -1 * torch.ones_like(r_x)
+
+        # the coordinates of the upper and lower corners of the current box (i.e. partition)
+        U_x = -1 * torch.ones_like(r_x)
+        U_y = -1 * torch.ones_like(r_x)
+        L_x = -1 * torch.ones_like(r_x)
+        L_y = -1 * torch.ones_like(r_x)
+        U_x[:,0] = 1.
+        U_y[:,0] = 1.
+        L_x[:,0] = 0.
+        L_y[:,0] = 0.
+
+        for n in range(ndim): # find which subpartition we're in, and the coordinates of its corners
+            # the coordinates of the new corner of the new subpartition
+            x_new = L_x[:,n] + r_x[:,n] * (U_x[:,n] - L_x[:,n])
+            y_new = L_y[:,n] + r_y[:,n] * (U_y[:,n] - L_y[:,n])
+            
+            # determine which subpartition x lands in (z=1 means it's in the upper subpartition)
+            z[:,n] = x > x_new
+            
+            # if x is in the upper subpartition, we change the LOWER corner (and vice versa)
+            U_x[:,n] = U_x[:,n] * z[:,n] + x_new * (1 - z[:,n])
+            U_y[:,n] = U_y[:,n] * z[:,n] + y_new * (1 - z[:,n])
+            L_x[:,n] = L_x[:,n] * (1 - z[:,n]) + x_new * z[:,n]
+            L_y[:,n] = L_y[:,n] * (1 - z[:,n]) + y_new * z[:,n]
+        
+        # TODO: double check (should be flipped??)
+        slope = (U_x - L_x) / (U_y - L_y)
+        xnew = L_y + slope * (x - x_new)
+        logdet = log(slope) # double check w/CW
+            
+        return xnew, logdet
+        
+        
+PBPLFlow = PartitionBasedPiecewiseLinearFlow
+    
 
 class IAF_DDSF(BaseFlow):
     
