@@ -30,12 +30,24 @@ sigmoid_ = nn.Sigmoid()
 sigmoid = lambda x: sigmoid_(x) * (1-delta) + 0.5 * delta 
 sigmoid2 = lambda x: sigmoid(x) * 2.0
 logsigmoid = lambda x: -softplus(-x)
+logit = lambda x: torch.log
+log = lambda x: torch.log(x*1e2)-np.log(1e2)
+logit = lambda x: log(x) - log(1-x)
 def softmax(x, dim=-1):
     e_x = torch.exp(x - x.max(dim=dim, keepdim=True)[0])
     out = e_x / e_x.sum(dim=dim, keepdim=True)
     return out
+
+sum1 = lambda x: x.sum(1)
+sum_from_one = lambda x: sum_from_one(sum1(x)) if len(x.size())>2 else sum1(x)
     
-    
+
+
+class Sigmoid(Module):
+    def forward(self, x):
+        return sigmoid(x)
+
+
 class WNlinear(Module):
 
     def __init__(self, in_features, out_features, 
@@ -302,7 +314,25 @@ class ResLinear(nn.Module):
         out_skip = input if self.same_dim else self.dot_01(input)
         return out_nonlinear + out_skip
 
+
+
+class GatingLinear(nn.Module):
+    
+    def __init__(
+            self, in_features, out_features, oper=WNlinear, **kwargs):
+        super(GatingLinear, self).__init__()
         
+        
+        self.dot = oper(in_features, out_features, **kwargs)
+        self.gate = oper(in_features, out_features, **kwargs)
+        
+    def forward(self, input):
+        h = self.dot(input)
+        s = sigmoid_(self.gate(input))
+        return s * h
+
+        
+    
     
 class Reshape(nn.Module):
     
@@ -361,7 +391,7 @@ class SequentialFlow(nn.Sequential):
             if self.gpu:
                 spl = spl.cuda()
                 lgd = lgd.cuda()
-                context = context.gpu()
+                context = context.cuda()
         
         return self.forward((spl, lgd, context))
     
@@ -384,5 +414,5 @@ if __name__ == '__main__':
     con = torch.autograd.Variable(
             torch.from_numpy(np.random.rand(2,3).astype('float32')))
     
-    print mdl((inp, con))[0].size()
+    print(mdl((inp, con))[0].size())
     

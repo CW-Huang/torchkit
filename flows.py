@@ -12,22 +12,20 @@ from torch.nn import Module
 from torch.nn.parameter import Parameter
 from torch.nn import functional as F
 import nn as nn_
+from nn import log 
 from torch.autograd import Variable
 import iaf_modules 
 import utils
 import numpy as np
 
-sum1 = lambda x: x.sum(1)
-sum_from_one = lambda x: sum_from_one(sum1(x)) if len(x.size())>2 else sum1(x)
 
-
-log = lambda x: torch.log(x*1e2)-np.log(1e2)
+sum_from_one = nn_.sum_from_one
 
 
 class BaseFlow(Module):
     
     
-    def sample(self, n=1, context=None):
+    def sample(self, n=1, context=None, **kwargs):
         dim = self.dim
         if isinstance(self.dim, int):
             dim = [dim,]
@@ -61,26 +59,42 @@ class LinearFlow(BaseFlow):
         
         self.dim = dim
         self.context_dim = context_dim
+
         
-        self.mean = oper(context_dim, dim)
-        self.lstd = oper(context_dim, dim)
+        if type(dim) is int:
+            dim_ = dim
+        else:
+            dim_ = np.prod(dim)
+        
+        self.mean = oper(context_dim, dim_)
+        self.lstd = oper(context_dim, dim_)
         
         self.reset_parameters()
         
     def reset_parameters(self):
-        self.mean.dot_01.scale.data.uniform_(-0.001, 0.001)
-        self.mean.dot_h1.scale.data.uniform_(-0.001, 0.001)
-        self.mean.dot_01.bias.data.uniform_(-0.001, 0.001)
-        self.mean.dot_h1.bias.data.uniform_(-0.001, 0.001)
-        self.lstd.dot_01.scale.data.uniform_(-0.001, 0.001)
-        self.lstd.dot_h1.scale.data.uniform_(-0.001, 0.001)
-        if self.realify == nn_.softplus:
-            inv = np.log(np.exp(1-nn_.delta)-1) * 0.5
-            self.lstd.dot_01.bias.data.uniform_(inv-0.001, inv+0.001)
-            self.lstd.dot_h1.bias.data.uniform_(inv-0.001, inv+0.001)
-        else:
-            self.lstd.dot_01.bias.data.uniform_(-0.001, 0.001)
-            self.lstd.dot_h1.bias.data.uniform_(-0.001, 0.001)
+        if isinstance(self.mean, nn_.ResLinear):
+            self.mean.dot_01.scale.data.uniform_(-0.001, 0.001)
+            self.mean.dot_h1.scale.data.uniform_(-0.001, 0.001)
+            self.mean.dot_01.bias.data.uniform_(-0.001, 0.001)
+            self.mean.dot_h1.bias.data.uniform_(-0.001, 0.001)
+            self.lstd.dot_01.scale.data.uniform_(-0.001, 0.001)
+            self.lstd.dot_h1.scale.data.uniform_(-0.001, 0.001)
+            if self.realify == nn_.softplus:
+                inv = np.log(np.exp(1-nn_.delta)-1) * 0.5
+                self.lstd.dot_01.bias.data.uniform_(inv-0.001, inv+0.001)
+                self.lstd.dot_h1.bias.data.uniform_(inv-0.001, inv+0.001)
+            else:
+                self.lstd.dot_01.bias.data.uniform_(-0.001, 0.001)
+                self.lstd.dot_h1.bias.data.uniform_(-0.001, 0.001)
+        elif isinstance(self.mean, nn.Linear):
+            self.mean.weight.data.uniform_(-0.001, 0.001)
+            self.mean.bias.data.uniform_(-0.001, 0.001)
+            self.lstd.weight.data.uniform_(-0.001, 0.001)
+            if self.realify == nn_.softplus:
+                inv = np.log(np.exp(1-nn_.delta)-1) * 0.5
+                self.lstd.bias.data.uniform_(inv-0.001, inv+0.001)
+            else:
+                self.lstd.bias.data.uniform_(-0.001, 0.001)
 
 
     def forward(self, inputs):
@@ -89,11 +103,41 @@ class LinearFlow(BaseFlow):
         lstd = self.lstd(context)
         std = self.realify(lstd)
         
-        x_ = mean + std * x
+        if type(self.dim) is int:
+            x_ = mean + std * x
+        else:
+            size = x.size()
+            x_ = mean.view(size) + std.view(size) * x
         logdet_ = sum_from_one(torch.log(std)) + logdet
         return x_, logdet_, context   
 
 
+class BlockAffineFlow(Module):
+    # NICE, volume preserving
+    # x2' = x2 + nonLinfunc(x1)
+    
+    def __init__(self, dim1, dim2, context_dim, hid_dim, activation=nn.ELU()):
+        super(BlockAffineFlow, self).__init__()
+        self.dim1 = dim1
+        self.dim2 = dim2
+        self.actv = activation
+
+        
+        self.hid = nn_.WNBilinear(dim1, context_dim, hid_dim)
+        self.shift = nn_.WNBilinear(hid_dim, context_dim, dim2)
+        
+    def forward(self,inputs):
+        x, logdet, context = inputs
+        x1, x2 = x
+        
+        hid = self.actv(self.hid(x1, context))
+        shift = self.shift(hid, context)
+        
+        x2_ = x2 + shift
+
+        return (x1, x2_), 0, context
+    
+    
 class IAF(BaseFlow):
     
     def __init__(self, dim, hid_dim, context_dim, num_layers,
@@ -104,29 +148,32 @@ class IAF(BaseFlow):
         self.dim = dim
         self.context_dim = context_dim
         
-        self.made = iaf_modules.cMADE(
-                dim, hid_dim, context_dim, num_layers, 2, 
-                activation, fixed_order)
-       
-        self.reset_parameters()
+        if type(dim) is int:
+            self.mdl = iaf_modules.cMADE(
+                    dim, hid_dim, context_dim, num_layers, 2, 
+                    activation, fixed_order)
+            self.reset_parameters()
+        
         
     def reset_parameters(self):
-        self.made.hidden_to_output.cscale.weight.data.uniform_(-0.001, 0.001)
-        self.made.hidden_to_output.cscale.bias.data.uniform_(0.0, 0.0)
-        self.made.hidden_to_output.cbias.weight.data.uniform_(-0.001, 0.001)
-        self.made.hidden_to_output.cbias.bias.data.uniform_(0.0, 0.0)
+        self.mdl.hidden_to_output.cscale.weight.data.uniform_(-0.001, 0.001)
+        self.mdl.hidden_to_output.cscale.bias.data.uniform_(0.0, 0.0)
+        self.mdl.hidden_to_output.cbias.weight.data.uniform_(-0.001, 0.001)
+        self.mdl.hidden_to_output.cbias.bias.data.uniform_(0.0, 0.0)
         if self.realify == nn_.softplus:
             inv = np.log(np.exp(1-nn_.delta)-1) 
-            self.made.hidden_to_output.cbias.bias.data[1::2].uniform_(inv,inv)
+            self.mdl.hidden_to_output.cbias.bias.data[1::2].uniform_(inv,inv)
         elif self.realify == nn_.sigmoid:
-            self.made.hidden_to_output.cbias.bias.data[1::2].uniform_(2.0,2.0)
+            self.mdl.hidden_to_output.cbias.bias.data[1::2].uniform_(2.0,2.0)
         
         
     def forward(self, inputs):
         x, logdet, context = inputs
-        out, _ = self.made((x, context))
-        mean = out[:,:,0]
-        lstd = out[:,:,1]
+        out, _ = self.mdl((x, context))
+        if isinstance(self.mdl, iaf_modules.cMADE):
+            mean = out[:,:,0]
+            lstd = out[:,:,1]
+            
         std = self.realify(lstd)
         
         if self.realify == nn_.softplus:
@@ -139,45 +186,12 @@ class IAF(BaseFlow):
         return x_, logdet_, context
 
  
-class BlockAffineFlow(Module):
-    # RealNVP
-
-    def __init__(self, dim, context_dim, hid_dim, 
-                 mask=0, realify=nn_.softplus):
-        super(BlockAffineFlow, self).__init__()
-        self.mask = mask
-        self.dim = dim
-        self.realify = realify
-        self.gpu = True
-        
-        self.hid = nn_.WNBilinear(dim, context_dim, hid_dim)
-        self.mean = nn_.ResLinear(hid_dim, dim)
-        self.lstd = nn_.ResLinear(hid_dim, dim)
-
-    def forward(self,inputs):
-        x, logdet, context = inputs
-        mask = Variable(torch.zeros(1, self.dim))
-        if self.gpu:
-            mask = mask.cuda()
-
-        if self.mask:
-            mask[:, self.dim/2:].data += 1
-        else:
-            mask[:, :self.dim/2].data += 1
-
-        hid = self.hid(x*mask, context)
-        mean = self.mean(hid)*(-mask+1) + self.mean.dot_h1.bias
-        lstd = self.lstd(hid)*(-mask+1) + self.lstd.dot_h1.bias
-        std = self.realify(lstd)
-
-        x_ = mean + std * x
-        logdet_ = sum_from_one(torch.log(std)) + logdet
-        return x_, logdet_, context
 
 
 
 class IAF_DSF(BaseFlow):
     
+    mollify=0.0
     def __init__(self, dim, hid_dim, context_dim, num_layers,
                  activation=nn.ELU(), fixed_order=False,
                  num_ds_dim=4, num_ds_layers=1, num_ds_multiplier=3):
@@ -188,17 +202,22 @@ class IAF_DSF(BaseFlow):
         self.num_ds_dim = num_ds_dim
         self.num_ds_layers = num_ds_layers
         
-        self.made = iaf_modules.cMADE(
-                dim, hid_dim, context_dim, num_layers, 
-                num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
-                activation, fixed_order)
         
-        self.out_to_dsparams = nn.Conv1d(
-                num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
+
+        if type(dim) is int:
+            self.mdl = iaf_modules.cMADE(
+                    dim, hid_dim, context_dim, num_layers, 
+                    num_ds_multiplier*(hid_dim//dim)*num_ds_layers, 
+                    activation, fixed_order)
+            self.out_to_dsparams = nn.Conv1d(
+                num_ds_multiplier*(hid_dim//dim)*num_ds_layers, 
                 3*num_ds_layers*num_ds_dim, 1)
+            self.reset_parameters()
+        
+        
         self.sf = SigmoidFlow(num_ds_dim)
         
-        self.reset_parameters()
+        
         
     def reset_parameters(self):
         self.out_to_dsparams.weight.data.uniform_(-0.001, 0.001)
@@ -213,16 +232,18 @@ class IAF_DSF(BaseFlow):
         
     def forward(self, inputs):
         x, logdet, context = inputs
-        out, _ = self.made((x, context))
-        out = out.permute(0,2,1)
-        dsparams = self.out_to_dsparams(out).permute(0,2,1)
-        nparams = self.num_ds_dim*3
-        
-        h = x
+        out, _ = self.mdl((x, context))
+        if isinstance(self.mdl, iaf_modules.cMADE):
+            out = out.permute(0,2,1)
+            dsparams = self.out_to_dsparams(out).permute(0,2,1)
+            nparams = self.num_ds_dim*3
+      
+        mollify = self.mollify
+        h = x.view(x.size(0), -1)
         for i in range(self.num_ds_layers):
             params = dsparams[:,:,i*nparams:(i+1)*nparams]
-            h, logdet = self.sf(h, logdet, params)
-        
+            h, logdet = self.sf(h, logdet, params, mollify)
+       
         return h, logdet, context
 
 
@@ -238,13 +259,15 @@ class SigmoidFlow(BaseFlow):
         self.act_b = lambda x: x
         self.act_w = lambda x: nn_.softmax(x,dim=2)
         
-    def forward(self, x, logdet, dsparams):
+    def forward(self, x, logdet, dsparams, mollify=0.0):
         
         ndim = self.num_ds_dim
-        a = self.act_a(dsparams[:,:,0*ndim:1*ndim])
-        b = self.act_b(dsparams[:,:,1*ndim:2*ndim])
+        a_ = self.act_a(dsparams[:,:,0*ndim:1*ndim])
+        b_ = self.act_b(dsparams[:,:,1*ndim:2*ndim])
         w = self.act_w(dsparams[:,:,2*ndim:3*ndim])
         
+        a = a_ * (1-mollify) + 1.0 * mollify
+        b = b_ * (1-mollify) + 0.0 * mollify
         
         pre_sigm = a * x[:,:,None] + b
         sigm = torch.sigmoid(pre_sigm)
@@ -261,8 +284,8 @@ class SigmoidFlow(BaseFlow):
         logdet_ = logj + np.log(1-nn_.delta) - \
         (log(x_pre_clipped) + log(-x_pre_clipped+1))
         logdet = logdet_.sum(1) + logdet
-            
-            
+        
+        
         return xnew, logdet
         
         
@@ -331,11 +354,12 @@ class IAF_DDSF(BaseFlow):
         self.context_dim = context_dim
         self.num_ds_dim = num_ds_dim
         self.num_ds_layers = num_ds_layers
-        
-        self.made = iaf_modules.cMADE(
-                dim, hid_dim, context_dim, num_layers, 
-                num_ds_multiplier*(hid_dim/dim)*num_ds_layers,
-                activation, fixed_order)
+
+        if type(dim) is int:
+            self.mdl = iaf_modules.cMADE(
+                    dim, hid_dim, context_dim, num_layers, 
+                    num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
+                    activation, fixed_order)
         
         num_dsparams = 0
         for i in range(num_ds_layers):
@@ -357,31 +381,38 @@ class IAF_DDSF(BaseFlow):
                             DenseSigmoidFlow(in_dim,
                                              num_ds_dim,
                                              out_dim))
-            
-        self.out_to_dsparams = nn.Conv1d(
+        if type(dim) is int:
+            self.out_to_dsparams = nn.Conv1d(
                 num_ds_multiplier*(hid_dim/dim)*num_ds_layers, 
+                num_dsparams, 1)
+        else:
+            self.out_to_dsparams = nn.Conv1d(
+                num_ds_multiplier*(hid_dim/dim[0])*num_ds_layers, 
                 num_dsparams, 1)
         
         
         self.reset_parameters()
         
+
     def reset_parameters(self):
         self.out_to_dsparams.weight.data.uniform_(-0.001, 0.001)
         self.out_to_dsparams.bias.data.uniform_(0.0, 0.0)
         
+            
     def forward(self, inputs):
         x, logdet, context = inputs
-        out, _ = self.made((x, context))
+        out, _ = self.mdl((x, context))
         out = out.permute(0,2,1)
         dsparams = self.out_to_dsparams(out).permute(0,2,1)
         
         
         start = 0
-        
-        h = x[:,:,None]
+
+        h = x.view(x.size(0),-1)[:,:,None]
         n = x.size(0)
+        dim = self.dim if type(self.dim) is int else self.dim[0]
         lgd = Variable(torch.from_numpy(
-            np.zeros((n, self.dim, 1, 1)).astype('float32')))
+            np.zeros((n, dim, 1, 1)).astype('float32')))
         if self.out_to_dsparams.weight.is_cuda:
             lgd = lgd.cuda()
         for i in range(self.num_ds_layers):
@@ -405,7 +436,8 @@ class IAF_DDSF(BaseFlow):
         
         assert out_dim == 1, 'last dsf out dim should be 1'
         return h[:,:,0], lgd[:,:,0,0].sum(1) + logdet, context
-
+            
+            
 
 class DenseSigmoidFlow(BaseFlow):
     
@@ -431,10 +463,11 @@ class DenseSigmoidFlow(BaseFlow):
         
         
     def forward(self, x, logdet, dsparams):
+        inv = np.log(np.exp(1-nn_.delta)-1) 
         ndim = self.hidden_dim
         pre_u = self.u_[None,None,:,:]+dsparams[:,:,-self.in_dim:][:,:,None,:]
         pre_w = self.w_[None,None,:,:]+dsparams[:,:,2*ndim:3*ndim][:,:,None,:]
-        a = self.act_a(dsparams[:,:,0*ndim:1*ndim])
+        a = self.act_a(dsparams[:,:,0*ndim:1*ndim]+inv)
         b = self.act_b(dsparams[:,:,1*ndim:2*ndim])
         w = self.act_w(pre_w)
         u = self.act_u(pre_u)
@@ -488,6 +521,111 @@ class FlipFlow(BaseFlow):
         return output, logdet, context
     
 
+
+class Sigmoid(BaseFlow):
+    
+    def __init__(self):
+        super(Sigmoid, self).__init__()
+        
+    def forward(self, inputs):
+        if len(inputs) == 2:
+            input, logdet = inputs
+        elif len(inputs) == 3:
+            input, logdet, context = inputs
+        else:
+            raise(Exception('inputs length not correct'))
+        
+        output = F.sigmoid(input)
+        logdet += sum_from_one(- F.softplus(input) - F.softplus(-input))
+        
+        
+        if len(inputs) == 2:
+            return output, logdet
+        elif len(inputs) == 3:
+            return output, logdet, context
+        else:
+            raise(Exception('inputs length not correct'))
+
+
+class Logit(BaseFlow):
+
+    def __init__(self):
+        super(Logit, self).__init__()
+
+    def forward(self, inputs):
+        if len(inputs) == 2:
+            input, logdet = inputs
+        elif len(inputs) == 3:
+            input, logdet, context = inputs
+        else:
+            raise(Exception('inputs length not correct'))
+
+        output = log(input) - log(1-input)
+        logdet -= sum_from_one(log(input) + log(-input+1))        
+      
+        if len(inputs) == 2:
+            return output, logdet
+        elif len(inputs) == 3:
+            return output, logdet, context
+        else:
+            raise(Exception('inputs length not correct'))
+
+
+
+class Shift(BaseFlow):
+    
+    def __init__(self, b):
+        self.b = b
+        super(Shift, self).__init__()
+        
+    def forward(self, inputs):
+        if len(inputs) == 2:
+            input, logdet = inputs
+        elif len(inputs) == 3:
+            input, logdet, context = inputs
+        else:
+            raise(Exception('inputs length not correct'))
+        
+        output = input + self.b
+        
+        if len(inputs) == 2:
+            return output, logdet
+        elif len(inputs) == 3:
+            return output, logdet, context
+        else:
+            raise(Exception('inputs length not correct'))
+        
+        
+
+class Scale(BaseFlow):
+    
+    def __init__(self, g):
+        self.g = g
+        super(Scale, self).__init__()
+        
+    def forward(self, inputs):
+        if len(inputs) == 2:
+            input, logdet = inputs
+        elif len(inputs) == 3:
+            input, logdet, context = inputs
+        else:
+            raise(Exception('inputs length not correct'))
+        
+        output = input * self.g
+        logdet += np.log(np.abs(self.g)) * np.prod(input.size()[1:])
+        
+        
+        if len(inputs) == 2:
+            return output, logdet
+        elif len(inputs) == 3:
+            return output, logdet, context
+        else:
+            raise(Exception('inputs length not correct'))
+        
+        
+    
+    
+
 if __name__ == '__main__':
     
     
@@ -504,11 +642,11 @@ if __name__ == '__main__':
     mdl = IAF(784, 1000, 200, 3)
     
     inputs = (inp, lgd, con)
-    print mdl(inputs)[0].size()
+    print(mdl(inputs)[0].size())
     
     
     mdl = IAF_DSF(784, 1000, 200, 3)
-    print mdl(inputs)[0].size()
+    print(mdl(inputs)[0].size())
     
     
     n = 2
@@ -517,7 +655,7 @@ if __name__ == '__main__':
     num_in_dim = 1
     dsf = DenseSigmoidFlow(num_in_dim,num_ds_dim,num_ds_dim)
     
-    mdl = IAF_DDSF(784, 1000, 200, 3, num_ds_layers=2)
-    print mdl(inputs)[0].size()
+    mdl = IAF_DSF(784, 1000, 200, 3, num_ds_layers=2)
+    print(mdl(inputs)[0].size())
     
     
