@@ -194,7 +194,8 @@ class IAF_DSF(BaseFlow):
     mollify=0.0
     def __init__(self, dim, hid_dim, context_dim, num_layers,
                  activation=nn.ELU(), fixed_order=False,
-                 num_ds_dim=4, num_ds_layers=1, num_ds_multiplier=3):
+                 num_ds_dim=4, num_ds_layers=1, num_ds_multiplier=3,
+                 use_PBPLF=False):
         super(IAF_DSF, self).__init__()
         
         self.dim = dim
@@ -214,8 +215,10 @@ class IAF_DSF(BaseFlow):
                 3*num_ds_layers*num_ds_dim, 1)
             self.reset_parameters()
         
-        
-        self.sf = SigmoidFlow(num_ds_dim)
+        if use_PBPLF: 
+            self.sf = PBPLF(num_ds_dim)
+        else:
+            self.sf = SigmoidFlow(num_ds_dim)
         
         
         
@@ -292,55 +295,51 @@ class SigmoidFlow(BaseFlow):
 class PartitionBasedPiecewiseLinearFlow(BaseFlow):
    
     def __init__(self, num_z=4):
-        super(PartitionBasePiecewiseLinearFlow, self).__init__()
+        super(PartitionBasedPiecewiseLinearFlow, self).__init__()
         self.num_z = num_z
         
         self.act = lambda x: nn_.sigmoid(x) # TODO: maybe implement some sort of numerical stability by default here....
         
-    def forward(self, x, logdet, dsparams):
+    def forward(self, x, logdet, dsparams, mollify=0.0):
         
         ndim = self.num_z
         r_x = self.act(dsparams[:,:,0*ndim:1*ndim])
         r_y = self.act(dsparams[:,:,1*ndim:2*ndim])
 
-        # TODO: NTS: we don't need the keep whole vectors for z or the corners around...
-
         # a binary vector encoding which partition we're in
-        z = -1 * torch.ones_like(r_x)
+        z = -1 * torch.ones_like(r_x[:,:,0])
 
         # the coordinates of the upper and lower corners of the current box (i.e. partition)
-        U_x = -1 * torch.ones_like(r_x)
-        U_y = -1 * torch.ones_like(r_x)
-        L_x = -1 * torch.ones_like(r_x)
-        L_y = -1 * torch.ones_like(r_x)
-        U_x[:,0] = 1.
-        U_y[:,0] = 1.
-        L_x[:,0] = 0.
-        L_y[:,0] = 0.
+        U_x = 1. * torch.ones_like(z)
+        U_y = 1. * torch.ones_like(z)
+        L_x = 0. * torch.ones_like(z)
+        L_y = 0. * torch.ones_like(z)
 
         for n in range(ndim): # find which subpartition we're in, and the coordinates of its corners
             # the coordinates of the new corner of the new subpartition
-            x_new = L_x[:,n] + r_x[:,n] * (U_x[:,n] - L_x[:,n])
-            y_new = L_y[:,n] + r_y[:,n] * (U_y[:,n] - L_y[:,n])
+            x_coord = L_x + r_x[:,:,n] * (U_x - L_x)
+            y_coord = L_y + r_y[:,:,n] * (U_y - L_y)
             
             # determine which subpartition x lands in (z=1 means it's in the upper subpartition)
-            z[:,n] = x > x_new
+            z = (x > x_coord).float()
             
             # if x is in the upper subpartition, we change the LOWER corner (and vice versa)
-            U_x[:,n] = U_x[:,n] * z[:,n] + x_new * (1 - z[:,n])
-            U_y[:,n] = U_y[:,n] * z[:,n] + y_new * (1 - z[:,n])
-            L_x[:,n] = L_x[:,n] * (1 - z[:,n]) + x_new * z[:,n]
-            L_y[:,n] = L_y[:,n] * (1 - z[:,n]) + y_new * z[:,n]
+            U_x = U_x * z + x_coord * (1 - z)
+            U_y = U_y * z + y_coord * (1 - z)
+            L_x = L_x * (1 - z) + x_coord * z
+            L_y = L_y * (1 - z) + y_coord * z
         
-        # TODO: double check (should be flipped??)
-        slope = (U_x - L_x) / (U_y - L_y)
-        xnew = L_y + slope * (x - x_new)
-        logdet = log(slope) # double check w/CW
+        slope = (U_y - L_y) / (U_x - L_x)
+        xnew = L_y + slope * (x - x_coord)
+        logdet_ = log(slope) # double check w/CW
+        logdet = logdet_.sum(1) + logdet
+        
+        #import ipdb; ipdb.set_trace()
             
         return xnew, logdet
         
         
-PBPLFlow = PartitionBasedPiecewiseLinearFlow
+PBPLF = PartitionBasedPiecewiseLinearFlow
     
 
 class IAF_DDSF(BaseFlow):
