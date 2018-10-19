@@ -289,7 +289,7 @@ class SigmoidFlow(BaseFlow):
         return xnew, logdet
         
         
-class PartitionBasePiecewiseLinearFlow(BaseFlow):
+class PartitionBasedPiecewiseLinearFlow(BaseFlow):
    
     def __init__(self, num_z=4):
         super(PartitionBasePiecewiseLinearFlow, self).__init__()
