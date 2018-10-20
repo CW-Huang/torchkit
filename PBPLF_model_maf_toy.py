@@ -1,7 +1,7 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """
-Created on Sat Dec 23 01:00:42 2017
+Created on Sat Dec 23 01:00:42 2013
 
 @author: chinwei
 
@@ -27,28 +27,18 @@ class model(object):
     def __init__(self, sampler, n=64):
         self.mdl = nn_.SequentialFlow( 
                 flows.Sigmoid(),
-                #flows.IAF_DSF(2, 64, 1, 2),#, use_PBPLF=True), 
+                #flows.Logit(),
                 flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
                 flows.FlipFlow(1), 
                 flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
-                flows.FlipFlow(1), 
-                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
-                flows.FlipFlow(1), 
-                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
-                flows.FlipFlow(1), 
-                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
-                flows.FlipFlow(1), 
-                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
-                #flows.Scale(1 - 2 * eps),
-                #flows.Shift(eps),
                 flows.Logit(),
                 )
                 #flows.IAF(2, 64, 1, 2))
 #        self.mdl = flows.IAF_DDSF(2, 64, 1, 3, 
 #                num_ds_dim=2, num_ds_layers=2)
         
-        self.optim = optim.Adam(self.mdl.parameters(), lr=0.000005, 
-                                betas=(0.9, 0.999))
+        self.optim = optim.Adam(self.mdl.parameters(), lr=0.005, betas=(0.9, 0.999))
+        #self.optim = optim.SGD(self.mdl.parameters(), lr=1.e-10)
         
         self.sampler = sampler
         self.n = n
@@ -64,10 +54,11 @@ class model(object):
         zeros = self.zeros if zeros is None else zeros
         z, logdet, _ = self.mdl((spl, lgd, context))
         losses = - utils.log_normal(z, zeros, zeros+1.0).sum(1) - logdet
+        #import ipdb; ipdb.set_trace()
         return - losses
 
         
-    def train(self, total=2000):
+    def train(self, total=2000): # TODO: 2000
         
         n = self.n
        

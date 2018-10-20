@@ -534,8 +534,7 @@ class Sigmoid(BaseFlow):
             raise(Exception('inputs length not correct'))
         
         output = F.sigmoid(input)
-        logdet += sum_from_one(- F.softplus(input) - F.softplus(-input))
-        
+        logdet = logdet + sum_from_one(- F.softplus(input) - F.softplus(-input))
         
         if len(inputs) == 2:
             return output, logdet
@@ -559,7 +558,7 @@ class Logit(BaseFlow):
             raise(Exception('inputs length not correct'))
 
         output = log(input) - log(1-input)
-        logdet -= sum_from_one(log(input) + log(-input+1))        
+        logdet = logdet - sum_from_one(log(input) + log(-input+1))        
       
         if len(inputs) == 2:
             return output, logdet
@@ -611,7 +610,8 @@ class Scale(BaseFlow):
             raise(Exception('inputs length not correct'))
         
         output = input * self.g
-        logdet += np.log(np.abs(self.g)) * np.prod(input.size()[1:])
+        #logdet += np.log(np.abs(self.g)) * np.prod(input.size()[1:])
+        logdet = logdet + np.log(np.abs(self.g)) * np.prod(input.size()[1:])
         
         
         if len(inputs) == 2:
