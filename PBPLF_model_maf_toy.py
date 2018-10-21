@@ -27,7 +27,6 @@ class model(object):
     def __init__(self, sampler, n=64, partition_depth=10):
         self.mdl = nn_.SequentialFlow( 
                 flows.Sigmoid(),
-                #flows.Logit(),
                 flows.IAF_DSF(2, 64, 1, partition_depth, use_PBPLF=True),
                 flows.FlipFlow(1), 
                 flows.IAF_DSF(2, 64, 1, partition_depth, use_PBPLF=True),
@@ -37,9 +36,6 @@ class model(object):
                 flows.IAF_DSF(2, 64, 1, partition_depth, use_PBPLF=True),
                 flows.Logit(),
                 )
-                #flows.IAF(2, 64, 1, 2))
-#        self.mdl = flows.IAF_DDSF(2, 64, 1, 3, 
-#                num_ds_dim=2, num_ds_layers=2)
         
         #self.optim = optim.Adam(self.mdl.parameters(), lr=0.005, betas=(0.9, 0.999))
         self.optim = optim.Adam(self.mdl.parameters(), lr=0.0001, betas=(0.9, 0.999))
