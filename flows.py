@@ -292,6 +292,43 @@ class SigmoidFlow(BaseFlow):
         return xnew, logdet
         
         
+class NaivePiecewiseLinearFlow(BaseFlow):
+   
+    def __init__(self, num_z=4):
+        super(NaivePiecewiseLinearFlow, self).__init__()
+        self.num_z = num_z
+        
+    def forward(self, x, logdet, dsparams, mollify=0.0):
+        
+        ndim = self.num_z
+        r_x = dsparams[:,:,0*ndim:1*ndim]
+        r_y = dsparams[:,:,1*ndim:2*ndim]
+        r_x = r_x / r_x.sum(-1)
+        r_y = r_y / r_y.sum(-1)
+
+        # the coordinates of the upper and lower corners of the current box (i.e. partition)
+        U_x = 0. * torch.ones_like(r_x[:,:,0])
+        U_y = 0. * torch.ones_like(r_x[:,:,0])
+
+        for n in range(ndim): # find which subpartition we're in
+            L_x = U_x
+            L_y = U_y
+            U_x = L_x + r_x[:,:,n]
+            U_y = L_y + r_y[:,:,n]
+            if x > U_x:
+                break
+        slope = (U_y - L_y) / (U_x - L_x)
+        y = L_y + slope * (x - L_x)
+        logdet_ = log(slope)
+        logdet = logdet_.sum(1) + logdet
+            
+        return y, logdet
+
+        
+NPLF = NaivePiecewiseLinearFlow
+    
+
+        
 class PartitionBasedPiecewiseLinearFlow(BaseFlow):
    
     def __init__(self, num_z=4):
@@ -328,9 +365,10 @@ class PartitionBasedPiecewiseLinearFlow(BaseFlow):
             #import ipdb; ipdb.set_trace()
         
         slope = (U_y - L_y) / (U_x - L_x)
-        delta_x = (x - x_coord) * p + (x_coord - x) * (1 - p) 
-        y = L_y + slope * delta_x
-        logdet_ = log(slope) # double check w/CW
+        #delta_x = (x - x_coord) * p + (x_coord - x) * (1 - p) 
+        #delta_x = x - L_x
+        y = L_y + slope * (x - L_x)
+        logdet_ = log(slope)
         logdet = logdet_.sum(1) + logdet
         
         #import ipdb; ipdb.set_trace()
