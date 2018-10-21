@@ -297,12 +297,13 @@ class NaivePiecewiseLinearFlow(BaseFlow):
     def __init__(self, num_z=4):
         super(NaivePiecewiseLinearFlow, self).__init__()
         self.num_z = num_z
+        self.act = lambda x: nn_.softplus(x)
         
     def forward(self, x, logdet, dsparams, mollify=0.0):
         
         ndim = self.num_z
-        r_x = dsparams[:,:,0*ndim:1*ndim]
-        r_y = dsparams[:,:,1*ndim:2*ndim]
+        r_x = self.act(dsparams[:,:,0*ndim:1*ndim])
+        r_y = self.act(dsparams[:,:,1*ndim:2*ndim])
         r_x = r_x / r_x.sum(-1)
         r_y = r_y / r_y.sum(-1)
 

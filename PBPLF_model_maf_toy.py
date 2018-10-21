@@ -28,9 +28,9 @@ class model(object):
         self.mdl = nn_.SequentialFlow( 
                 flows.Sigmoid(),
                 #flows.Logit(),
-                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
+                flows.IAF_DSF(2, 64, 1, 4, use_PBPLF=True),
                 flows.FlipFlow(1), 
-                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
+                flows.IAF_DSF(2, 64, 1, 4, use_PBPLF=True),
                 flows.Logit(),
                 )
                 #flows.IAF(2, 64, 1, 2))
