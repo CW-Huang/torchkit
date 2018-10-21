@@ -24,20 +24,25 @@ eps = 1.e-5
 
 class model(object):
     
-    def __init__(self, sampler, n=64):
+    def __init__(self, sampler, n=64, partition_depth=10):
         self.mdl = nn_.SequentialFlow( 
                 flows.Sigmoid(),
                 #flows.Logit(),
-                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
+                flows.IAF_DSF(2, 64, 1, partition_depth, use_PBPLF=True),
                 flows.FlipFlow(1), 
-                flows.IAF_DSF(2, 64, 1, 2, use_PBPLF=True),
+                flows.IAF_DSF(2, 64, 1, partition_depth, use_PBPLF=True),
+                flows.FlipFlow(1), 
+                flows.IAF_DSF(2, 64, 1, partition_depth, use_PBPLF=True),
+                flows.FlipFlow(1), 
+                flows.IAF_DSF(2, 64, 1, partition_depth, use_PBPLF=True),
                 flows.Logit(),
                 )
                 #flows.IAF(2, 64, 1, 2))
 #        self.mdl = flows.IAF_DDSF(2, 64, 1, 3, 
 #                num_ds_dim=2, num_ds_layers=2)
         
-        self.optim = optim.Adam(self.mdl.parameters(), lr=0.005, betas=(0.9, 0.999))
+        #self.optim = optim.Adam(self.mdl.parameters(), lr=0.005, betas=(0.9, 0.999))
+        self.optim = optim.Adam(self.mdl.parameters(), lr=0.0001, betas=(0.9, 0.999))
         #self.optim = optim.SGD(self.mdl.parameters(), lr=1.e-10)
         
         self.sampler = sampler
@@ -57,8 +62,7 @@ class model(object):
         #import ipdb; ipdb.set_trace()
         return - losses
 
-        
-    def train(self, total=2000): # TODO: 2000
+    def train(self, total=2000):
         
         n = self.n
        
@@ -75,7 +79,7 @@ class model(object):
             loss.backward()
             self.optim.step()
             
-            if ((it + 1) % 1) == 0:
+            if ((it + 1) % 100) == 0:
                 print 'Iteration: [%4d/%4d] loss: %.8f' % \
                     (it+1, total, loss.data[0])
             

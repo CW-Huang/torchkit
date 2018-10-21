@@ -215,6 +215,7 @@ class IAF_DSF(BaseFlow):
                 3*num_ds_layers*num_ds_dim, 1)
             self.reset_parameters()
         
+        # TODO: refactor (we have an extra 50% of parameters for PBPLF...)
         if use_PBPLF: 
             self.sf = PBPLF(num_ds_dim)
         else:
