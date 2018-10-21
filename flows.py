@@ -195,7 +195,7 @@ class IAF_DSF(BaseFlow):
     def __init__(self, dim, hid_dim, context_dim, num_layers,
                  activation=nn.ELU(), fixed_order=False,
                  num_ds_dim=4, num_ds_layers=1, num_ds_multiplier=3,
-                 use_PBPLF=False):
+                 flow='DSF'):
         super(IAF_DSF, self).__init__()
         
         self.dim = dim
@@ -216,10 +216,14 @@ class IAF_DSF(BaseFlow):
             self.reset_parameters()
         
         # TODO: refactor (we have an extra 50% of parameters for PBPLF...)
-        if use_PBPLF: 
+        if flow == 'DSF': 
+            self.sf = SigmoidFlow(num_ds_dim)
+        elif flow == 'NPLF':
+            self.sf = NPLF(num_ds_dim)
+        elif flow == 'PBPLF':
             self.sf = PBPLF(num_ds_dim)
         else:
-            self.sf = SigmoidFlow(num_ds_dim)
+            assert False
         
         
         
@@ -305,20 +309,33 @@ class NaivePiecewiseLinearFlow(BaseFlow):
         ndim = self.num_z
         r_x = self.act(dsparams[:,:,0*ndim:1*ndim])
         r_y = self.act(dsparams[:,:,1*ndim:2*ndim])
-        r_x = r_x / r_x.sum(-1)
-        r_y = r_y / r_y.sum(-1)
+        r_x = r_x / r_x.sum(-1, keepdim=True)
+        r_y = r_y / r_y.sum(-1, keepdim=True)
 
         # the coordinates of the upper and lower corners of the current box (i.e. partition)
         U_x = 0. * torch.ones_like(r_x[:,:,0])
         U_y = 0. * torch.ones_like(r_x[:,:,0])
+        L_x = 0. * torch.ones_like(r_x[:,:,0])
+        L_y = 0. * torch.ones_like(r_x[:,:,0])
+        finished =  0. * torch.ones_like(r_x[:,:,0])
+        some_ones = torch.ones_like(r_x[:,:,0]) # TODO: necessary??
+
+        try:
+            where = torch.where
+        except:
+            def where(cond, a, b):
+                cond = cond.float()    
+                return (cond * a) + ((1-cond) * b)
+
 
         for n in range(ndim): # find which subpartition we're in
-            L_x = U_x
-            L_y = U_y
-            U_x = L_x + r_x[:,:,n]
-            U_y = L_y + r_y[:,:,n]
-            if x > U_x:
-                break
+            L_x = where(finished, L_x, U_x)
+            L_y = where(finished, L_y, U_y)
+            U_x = where(finished, U_x, L_x + r_x[:,:,n])
+            U_y = where(finished, U_y, L_y + r_y[:,:,n])
+            # once x > U_x, we've found the interval, and we stop updating U_x, L_x for that x
+            finished = where(x>U_x, some_ones, finished)
+
         slope = (U_y - L_y) / (U_x - L_x)
         y = L_y + slope * (x - L_x)
         logdet_ = log(slope)

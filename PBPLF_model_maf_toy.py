@@ -24,16 +24,17 @@ eps = 1.e-5
 
 class model(object):
     
-    def __init__(self, sampler, n=64, partition_depth=10):
+    # TODO: n? partition_depth??
+    def __init__(self, sampler, n=64, partition_depth=10, flow='NPLF'):
         self.mdl = nn_.SequentialFlow( 
                 flows.Sigmoid(),
-                flows.IAF_DSF(2, 64, 1, partition_depth, use_PBPLF=True),
+                flows.IAF_DSF(2, 64, 1, partition_depth, flow=flow),
                 flows.FlipFlow(1), 
-                flows.IAF_DSF(2, 64, 1, partition_depth, use_PBPLF=True),
+                flows.IAF_DSF(2, 64, 1, partition_depth, flow=flow),
                 flows.FlipFlow(1), 
-                flows.IAF_DSF(2, 64, 1, partition_depth, use_PBPLF=True),
+                flows.IAF_DSF(2, 64, 1, partition_depth, flow=flow),
                 flows.FlipFlow(1), 
-                flows.IAF_DSF(2, 64, 1, partition_depth, use_PBPLF=True),
+                flows.IAF_DSF(2, 64, 1, partition_depth, flow=flow),
                 flows.Logit(),
                 )
         
@@ -71,6 +72,11 @@ class model(object):
             losses = - self.density(spl)
             
             loss = losses.mean()
+
+            if ((it + 1) % 1) == 0:
+                print 'Iteration: [%4d/%4d] loss: %.8f' % \
+                    (it+1, total, loss.data[0])
+            
 
             loss.backward()
             self.optim.step()
