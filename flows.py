@@ -259,7 +259,7 @@ class SigmoidFlow(BaseFlow):
         self.act_b = lambda x: x
         self.act_w = lambda x: nn_.softmax(x,dim=2)
         
-    def forward(self, x, logdet, dsparams, mollify=0.0):
+    def forward(self, x, logdet, dsparams, mollify=0.0, delta=nn_.delta):
         
         ndim = self.num_ds_dim
         a_ = self.act_a(dsparams[:,:,0*ndim:1*ndim])
@@ -272,7 +272,7 @@ class SigmoidFlow(BaseFlow):
         pre_sigm = a * x[:,:,None] + b
         sigm = torch.sigmoid(pre_sigm)
         x_pre = torch.sum(w*sigm, dim=2)
-        x_pre_clipped = x_pre * (1-nn_.delta) + nn_.delta * 0.5
+        x_pre_clipped = x_pre * (1-delta) + delta * 0.5
         x_ = log(x_pre_clipped) - log(1-x_pre_clipped)
         xnew = x_
         
@@ -281,7 +281,7 @@ class SigmoidFlow(BaseFlow):
             nn_.logsigmoid(-pre_sigm) + log(a)
 
         logj = utils.log_sum_exp(logj,2).sum(2)
-        logdet_ = logj + np.log(1-nn_.delta) - \
+        logdet_ = logj + np.log(1-delta) - \
         (log(x_pre_clipped) + log(-x_pre_clipped+1))
         logdet = logdet_.sum(1) + logdet
         
