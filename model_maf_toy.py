@@ -24,20 +24,22 @@ import matplotlib.pyplot as plt
 class model(object):
     
     def __init__(self, sampler, n=64):
-        self.mdl = nn_.SequentialFlow( 
-                flows.IAF(2, 64, 1, 2), 
-                flows.FlipFlow(1), 
-                flows.IAF(2, 64, 1, 2),
-                flows.FlipFlow(1), 
-                flows.IAF(2, 64, 1, 2),
-                flows.FlipFlow(1),
-                flows.IAF(2, 64, 1, 2), 
-                flows.FlipFlow(1), 
-                flows.IAF(2, 64, 1, 2),
-                flows.FlipFlow(1), 
-                flows.IAF(2, 64, 1, 2))
+#        self.mdl = nn_.SequentialFlow( 
+#                flows.IAF(2, 64, 1, 2), 
+#                flows.FlipFlow(1), 
+#                flows.IAF(2, 64, 1, 2),
+#                flows.FlipFlow(1), 
+#                flows.IAF(2, 64, 1, 2),
+#                flows.FlipFlow(1),
+#                flows.IAF(2, 64, 1, 2), 
+#                flows.FlipFlow(1), 
+#                flows.IAF(2, 64, 1, 2),
+#                flows.FlipFlow(1), 
+#                flows.IAF(2, 64, 1, 2))
 #        self.mdl = flows.IAF_DDSF(2, 64, 1, 3, 
 #                num_ds_dim=2, num_ds_layers=2)
+        self.mdl = flows.IAF_DSF(2, 64, 1, 3, 
+                num_ds_dim=4)
         
         self.optim = optim.Adam(self.mdl.parameters(), lr=0.005, 
                                 betas=(0.9, 0.999))
@@ -164,6 +166,32 @@ ax.axis('off')
 plt.xlim((-10,10))
 plt.ylim((-10,10))
 #plt.savefig('100MoG.pdf',format='pdf')
+
+
+
+
+
+from ops import mollify
+
+
+fig = plt.figure(figsize=(10,15))
+for j,mm in enumerate(reversed([0.0,0.2,0.4,0.6,0.8,1.0])):
+    mollify(mdl.mdl, mm)
+    ax = fig.add_subplot(3,2,j+1)    
+    n = 200    
+    
+    context = Variable(torch.FloatTensor(n**2, 1).zero_()) + 2.0
+    lgd = Variable(torch.FloatTensor(n**2).zero_())
+    zeros = Variable(torch.FloatTensor(n**2, 2).zero_())
+            
+    
+    Z = mdl.density(X, lgd, context, zeros).data.numpy().reshape(n,n)
+    ax.pcolormesh(xx,yy,np.exp(Z))
+    ax.axis('off')
+    plt.xlim((-10,10))
+    plt.ylim((-10,10))
+    
+
 
 
 
