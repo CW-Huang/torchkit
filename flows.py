@@ -202,9 +202,30 @@ class IAF_DSF(BaseFlow):
         self.context_dim = context_dim
         self.num_ds_dim = num_ds_dim
         self.num_ds_layers = num_ds_layers
-        
+        self.flow = flow
         
 
+        # TODO: refactor (we have an extra 50% of parameters for PBPLF...)
+        if flow == 'DSF': 
+            self.sf = SigmoidFlow(num_ds_dim)
+            multiplier = 3
+        elif flow == 'EPLF':
+            self.sf = EPLF(num_ds_dim)
+            multiplier = 2
+        elif flow == 'MPLF':
+            self.sf = MPLF(num_ds_dim)
+            multiplier = 2
+        elif flow == 'NPLF':
+            self.sf = NPLF(num_ds_dim)
+            multiplier = 2
+        elif flow == 'PBPLF':
+            self.sf = PBPLF(num_ds_dim)
+            multiplier = 2
+        else:
+            assert False
+            
+        self.multiplier = multiplier
+            
         if type(dim) is int:
             self.mdl = iaf_modules.cMADE(
                     dim, hid_dim, context_dim, num_layers, 
@@ -212,31 +233,24 @@ class IAF_DSF(BaseFlow):
                     activation, fixed_order)
             self.out_to_dsparams = nn.Conv1d(
                 num_ds_multiplier*(hid_dim//dim)*num_ds_layers, 
-                3*num_ds_layers*num_ds_dim, 1)
+                multiplier*num_ds_layers*num_ds_dim, 1)
             self.reset_parameters()
         
-        # TODO: refactor (we have an extra 50% of parameters for PBPLF...)
-        if flow == 'DSF': 
-            self.sf = SigmoidFlow(num_ds_dim)
-        elif flow == 'NPLF':
-            self.sf = NPLF(num_ds_dim)
-        elif flow == 'PBPLF':
-            self.sf = PBPLF(num_ds_dim)
-        else:
-            assert False
+        
         
         
         
     def reset_parameters(self):
         self.out_to_dsparams.weight.data.uniform_(-0.001, 0.001)
         self.out_to_dsparams.bias.data.uniform_(0.0, 0.0)
-        
-        inv = np.log(np.exp(1-nn_.delta)-1) 
-        for l in range(self.num_ds_layers):
-            nc = self.num_ds_dim
-            nparams = nc * 3
-            s = l*nparams
-            self.out_to_dsparams.bias.data[s:s+nc].uniform_(inv,inv)
+
+        if self.flow == 'DSF':
+            inv = np.log(np.exp(1-nn_.delta)-1) 
+            for l in range(self.num_ds_layers):
+                nc = self.num_ds_dim
+                nparams = nc * 3
+                s = l*nparams
+                self.out_to_dsparams.bias.data[s:s+nc].uniform_(inv,inv)
         
     def forward(self, inputs):
         x, logdet, context = inputs
@@ -244,7 +258,7 @@ class IAF_DSF(BaseFlow):
         if isinstance(self.mdl, iaf_modules.cMADE):
             out = out.permute(0,2,1)
             dsparams = self.out_to_dsparams(out).permute(0,2,1)
-            nparams = self.num_ds_dim*3
+            nparams = self.num_ds_dim*self.multiplier
       
         mollify = self.mollify
         h = x.view(x.size(0), -1)
@@ -296,11 +310,52 @@ class SigmoidFlow(BaseFlow):
         
         return xnew, logdet
         
-        
-class NaivePiecewiseLinearFlow(BaseFlow):
+
+
+
+
+class ExtremelyNaivePiecewiseLinearFlow(BaseFlow):
    
     def __init__(self, num_z=4):
-        super(NaivePiecewiseLinearFlow, self).__init__()
+        super(ExtremelyNaivePiecewiseLinearFlow, self).__init__()
+        self.num_z = num_z
+        self.act = lambda x: nn_.softplus(x)
+        
+    def forward(self, x, logdet, dsparams, mollify=0.0):
+        
+        ndim = self.num_z
+        a_s = self.act(dsparams[:,:,0*ndim:1*ndim])
+        b_s = dsparams[:,:,1*ndim:2*ndim]
+       
+        
+        #old_x = a_s[:,:,0] * x + b_s[:,:,0]
+        ys = a_s * x.unsqueeze(2) + b_s
+        old_x = ys[:,:,0]
+        ss = a_s
+        old_s = a_s[:,:,0]
+        for n in range(1,ndim):
+            new_x = ys[:,:,n]
+            new_s = ss[:,:,n]
+            oper = n%2
+            combine = torch.cat([old_x[:,:,None],new_x[:,:,None]],2)
+            if oper:
+                old_x, ind = combine.max(2)
+            else:
+                old_x, ind = combine.min(2)
+            ind = ind.float()
+            old_s = new_s * ind + old_s * (1-ind) 
+        assert np.all((old_s >0).data.numpy())
+        logdet_ = sum_from_one(torch.log(old_s)) + logdet
+
+        return old_x, logdet_
+
+        
+EPLF = ExtremelyNaivePiecewiseLinearFlow
+
+class MoreNaivePiecewiseLinearFlow(BaseFlow):
+   
+    def __init__(self, num_z=4):
+        super(MoreNaivePiecewiseLinearFlow, self).__init__()
         self.num_z = num_z
         self.act = lambda x: nn_.softplus(x)
         
@@ -311,38 +366,72 @@ class NaivePiecewiseLinearFlow(BaseFlow):
         r_y = self.act(dsparams[:,:,1*ndim:2*ndim])
         r_x = r_x / r_x.sum(-1, keepdim=True)
         r_y = r_y / r_y.sum(-1, keepdim=True)
+        
+        L_x = torch.cumsum(torch.cat([torch.zeros_like(r_x[:,:,0:1]),r_x[:,:,:-1]],2), 2)
+        L_y = torch.cumsum(torch.cat([torch.zeros_like(r_y[:,:,0:1]),r_y[:,:,:-1]],2), 2)
+        U_x = torch.cumsum(r_x, 2)
+        U_y = torch.cumsum(r_y, 2)
+        
+        x_ = x.unsqueeze(2)
+        ind = ((x_>=L_x) * (x_<U_x)).float()
+        L_x = (L_x * ind).sum(2)
+        L_y = (L_y * ind).sum(2)
+        U_x = (U_x * ind).sum(2)
+        U_y = (U_y * ind).sum(2)
+        
+        assert np.all(ind.sum(2).data.numpy() == 1)
+        
+        slope = (U_y - L_y) / (U_x - L_x)
+        y = L_y + slope * (x - L_x)
+        logdet_ = sum_from_one(torch.log(slope)) + logdet
+            
+        return y, logdet_
 
+        
+MPLF = MoreNaivePiecewiseLinearFlow
+
+class NaivePiecewiseLinearFlow(BaseFlow):
+   
+    def __init__(self, num_z=4):
+        super(NaivePiecewiseLinearFlow, self).__init__()
+        self.num_z = num_z
+        self.act = lambda x: nn_.softplus(x)
+        
+    def forward(self, x, logdet, dsparams, mollify=0.0):
+        dsparams = dsparams / 1000.
+        ndim = self.num_z
+        r_x = self.act(dsparams[:,:,0*ndim:1*ndim])
+        r_y = self.act(dsparams[:,:,1*ndim:2*ndim])
+        r_x = r_x / r_x.sum(-1, keepdim=True)
+        r_y = r_y / r_y.sum(-1, keepdim=True)
+        
         # the coordinates of the upper and lower corners of the current box (i.e. partition)
-        U_x = 0. * torch.ones_like(r_x[:,:,0])
-        U_y = 0. * torch.ones_like(r_x[:,:,0])
-        L_x = 0. * torch.ones_like(r_x[:,:,0])
-        L_y = 0. * torch.ones_like(r_x[:,:,0])
-        finished =  0. * torch.ones_like(r_x[:,:,0])
+        U_x = torch.zeros_like(r_x[:,:,0])
+        U_y = torch.zeros_like(r_x[:,:,0])
+        L_x = torch.zeros_like(r_x[:,:,0])
+        L_y = torch.zeros_like(r_x[:,:,0])
+        finished = torch.zeros_like(r_x[:,:,0])
         some_ones = torch.ones_like(r_x[:,:,0]) # TODO: necessary??
-
-        try:
-            where = torch.where
-        except:
-            def where(cond, a, b):
-                cond = cond.float()    
-                return (cond * a) + ((1-cond) * b)
-
-
+        
+        def where(cond, a, b):
+            cond = cond.float().detach()
+            return (cond * a) + ((1-cond) * b)
+        
         for n in range(ndim): # find which subpartition we're in
             L_x = where(finished, L_x, U_x)
             L_y = where(finished, L_y, U_y)
             U_x = where(finished, U_x, L_x + r_x[:,:,n])
             U_y = where(finished, U_y, L_y + r_y[:,:,n])
             # once x > U_x, we've found the interval, and we stop updating U_x, L_x for that x
-            finished = where(x>U_x, some_ones, finished)
-
+            finished = where(x<U_x, some_ones, finished.float())
+        assert np.all(finished.data.numpy()==1)
         slope = (U_y - L_y) / (U_x - L_x)
         y = L_y + slope * (x - L_x)
         logdet_ = log(slope)
         logdet = logdet_.sum(1) + logdet
-            
+        
         return y, logdet
-
+        
         
 NPLF = NaivePiecewiseLinearFlow
     
@@ -681,37 +770,152 @@ class Scale(BaseFlow):
         
     
     
-
+#
+#if __name__ == '__main__':
+#    
+#    
+#    
+#    
+#    inp = torch.autograd.Variable(
+#            torch.from_numpy(np.random.rand(2,784).astype('float32')))
+#    con = torch.autograd.Variable(
+#            torch.from_numpy(np.random.rand(2,200).astype('float32')))
+#    lgd = torch.autograd.Variable(
+#            torch.from_numpy(np.random.rand(2).astype('float32')))
+#    
+#    
+#    mdl = IAF(784, 1000, 200, 3)
+#    
+#    inputs = (inp, lgd, con)
+#    print(mdl(inputs)[0].size())
+#    
+#    
+#    mdl = IAF_DSF(784, 1000, 200, 3)
+#    print(mdl(inputs)[0].size())
+#    
+#    
+#    n = 2
+#    dim = 2
+#    num_ds_dim = 4
+#    num_in_dim = 1
+#    dsf = DenseSigmoidFlow(num_in_dim,num_ds_dim,num_ds_dim)
+#    
+#    mdl = IAF_DSF(784, 1000, 200, 3, num_ds_layers=2)
+#    print(mdl(inputs)[0].size())
+    
 if __name__ == '__main__':
+
+
+    
+    class NaivePiecewiseLinearFlow(BaseFlow):
+       
+        def __init__(self, num_z=4):
+            super(NaivePiecewiseLinearFlow, self).__init__()
+            self.num_z = num_z
+            self.act = lambda x: nn_.softplus(x)
+            
+        def forward(self, x, logdet, dsparams, mollify=0.0):
+            
+            ndim = self.num_z
+            r_x = self.act(dsparams[:,:,0*ndim:1*ndim])
+            r_y = self.act(dsparams[:,:,1*ndim:2*ndim])
+            r_x = r_x / r_x.sum(-1, keepdim=True)
+            r_y = r_y / r_y.sum(-1, keepdim=True)
+            
+            # the coordinates of the upper and lower corners of the current box (i.e. partition)
+            U_x = torch.zeros_like(r_x[:,:,0])
+            U_y = torch.zeros_like(r_x[:,:,0])
+            L_x = torch.zeros_like(r_x[:,:,0])
+            L_y = torch.zeros_like(r_x[:,:,0])
+            finished = torch.zeros_like(r_x[:,:,0])
+            some_ones = torch.ones_like(r_x[:,:,0]) # TODO: necessary??
+            
+            def where(cond, a, b):
+                cond = cond.float().detach()
+                return (cond * a) + ((1-cond) * b)
+            
+            for n in range(ndim): # find which subpartition we're in
+                L_x = where(finished, L_x, U_x)
+                L_y = where(finished, L_y, U_y)
+                U_x = where(finished, U_x, L_x + r_x[:,:,n])
+                U_y = where(finished, U_y, L_y + r_y[:,:,n])
+                # once x > U_x, we've found the interval, and we stop updating U_x, L_x for that x
+                finished = where(x<U_x, some_ones, finished.float())
+            assert np.all(finished.data.numpy()==1)
+            slope = (U_y - L_y) / (U_x - L_x)
+            y = L_y + slope * (x - L_x)
+            logdet_ = log(U_y - L_y) - log(U_x - L_x)
+            logdet = sum_from_one(logdet_) + logdet
+            
+            return y, logdet
+    
+    NPLF = NaivePiecewiseLinearFlow
+    
+    nbp = 5
+    fl = NPLF(nbp)
+    #fl = ExtremelyNaivePiecewiseLinearFlow(nbp)
+    n = 500
+    x = Variable(torch.from_numpy(np.linspace(-10,10,n)).float().unsqueeze(1))
+    lgd = Variable(torch.FloatTensor(n).zero_())
+    zeros = Variable(torch.FloatTensor(n, 2).zero_())
+    dsparams = Variable(torch.FloatTensor(1, 1, nbp*2)).normal_() *1.
+    x_, lgd = Sigmoid()((x,lgd))
+    x_, lgd = fl(x_,lgd, dsparams)
+#    x_, lgd = Logit()((x_,lgd))
+    plt.figure()
+    plt.plot(x.data.numpy(),x_.data.numpy())
     
     
     
-    
-    inp = torch.autograd.Variable(
-            torch.from_numpy(np.random.rand(2,784).astype('float32')))
-    con = torch.autograd.Variable(
-            torch.from_numpy(np.random.rand(2,200).astype('float32')))
-    lgd = torch.autograd.Variable(
-            torch.from_numpy(np.random.rand(2).astype('float32')))
-    
-    
-    mdl = IAF(784, 1000, 200, 3)
-    
-    inputs = (inp, lgd, con)
-    print(mdl(inputs)[0].size())
-    
-    
-    mdl = IAF_DSF(784, 1000, 200, 3)
-    print(mdl(inputs)[0].size())
+    def density(x):
+        n = x.size(0)
+        lgd = Variable(torch.FloatTensor(n).zero_())
+        zeros = Variable(torch.FloatTensor(n, 2).zero_())
+        
+        x_, lgd = Sigmoid()((x,lgd))
+        x_, lgd = fl(x_,lgd, dsparams)
+#        x_, lgd = Logit()((x_,lgd))
+        
+#        return utils.log_normal(x_, zeros, zeros+1.0).sum(1) + lgd
+        return  lgd + 1.0
+    plt.figure()
+    plt.plot(x.data.numpy(),np.exp(density(x).data.numpy()))
     
     
-    n = 2
-    dim = 2
-    num_ds_dim = 4
-    num_in_dim = 1
-    dsf = DenseSigmoidFlow(num_in_dim,num_ds_dim,num_ds_dim)
-    
-    mdl = IAF_DSF(784, 1000, 200, 3, num_ds_layers=2)
-    print(mdl(inputs)[0].size())
-    
-    
+#    
+#    x_, lgd = Sigmoid()((x,lgd))
+#    
+#    
+#    ndim = fl.num_z
+#    r_x = fl.act(dsparams[:,:,0*ndim:1*ndim])
+#    r_y = fl.act(dsparams[:,:,1*ndim:2*ndim])
+#    r_x = r_x / r_x.sum(-1, keepdim=True)
+#    r_y = r_y / r_y.sum(-1, keepdim=True)
+#    
+#    # the coordinates of the upper and lower corners of the current box (i.e. partition)
+#    U_x = torch.zeros_like(r_x[:,:,0])
+#    U_y = torch.zeros_like(r_x[:,:,0])
+#    L_x = torch.zeros_like(r_x[:,:,0])
+#    L_y = torch.zeros_like(r_x[:,:,0])
+#    finished = torch.zeros_like(r_x[:,:,0])
+#    some_ones = torch.ones_like(r_x[:,:,0]) # TODO: necessary??
+#    
+#    def where(cond, a, b):
+#        cond = cond.float().detach()
+#        return (cond * a) + ((1-cond) * b)
+#    
+#    for n in range(ndim): # find which subpartition we're in
+#        L_x = where(finished, L_x, U_x)
+#        L_y = where(finished, L_y, U_y)
+#        U_x = where(finished, U_x, L_x + r_x[:,:,n])
+#        U_y = where(finished, U_y, L_y + r_y[:,:,n])
+#        # once x > U_x, we've found the interval, and we stop updating U_x, L_x for that x
+#        finished = where(x_<U_x, some_ones, finished.float())
+#    assert np.all(finished.data.numpy()==1)
+#    slope = (U_y - L_y) / (U_x - L_x)
+#    y = L_y + slope * (x_ - L_x)
+#    logdet_ = log(slope)
+#    logdet = logdet_.sum(1) + logdet
+#    
+        
+

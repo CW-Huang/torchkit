@@ -18,6 +18,7 @@ import nn as nn_
 import flows
 import utils
 import matplotlib.pyplot as plt
+import torch.nn as nn
 
 eps = 1.e-5
 
@@ -25,27 +26,31 @@ eps = 1.e-5
 class model(object):
     
     # TODO: n? partition_depth??
-    def __init__(self, sampler, n=64, partition_depth=10, flow='NPLF'):
+    def __init__(self, sampler, n=64, flow='NPLF'):
         self.mdl = nn_.SequentialFlow( 
                 flows.Sigmoid(),
-                flows.IAF_DSF(2, 64, 1, partition_depth, flow=flow),
-                flows.FlipFlow(1), 
-                flows.IAF_DSF(2, 64, 1, partition_depth, flow=flow),
-                flows.FlipFlow(1), 
-                flows.IAF_DSF(2, 64, 1, partition_depth, flow=flow),
-                flows.FlipFlow(1), 
-                flows.IAF_DSF(2, 64, 1, partition_depth, flow=flow),
+                flows.IAF_DSF(2, 64, 1, 2, flow=flow, num_ds_dim=8, num_ds_layers=1),
+                flows.FlipFlow(1),
+                flows.IAF_DSF(2, 64, 1, 2, flow=flow, num_ds_dim=8, num_ds_layers=1),
+                flows.FlipFlow(1),
+                flows.IAF_DSF(2, 64, 1, 2, flow=flow, num_ds_dim=8, num_ds_layers=1),
+                flows.FlipFlow(1),
+                flows.IAF_DSF(2, 64, 1, 2, flow=flow, num_ds_dim=8, num_ds_layers=1),
+#                flows.FlipFlow(1),
+#                flows.IAF_DSF(2, 64, 1, 3, flow=flow, num_ds_dim=8, num_ds_layers=1),
+#                flows.IAF_DSF(2, 64, 1, 3, flow=flow, num_ds_dim=16),
                 flows.Logit(),
+#                flows.IAF(2, 64, 1, 2),
                 )
         
         #self.optim = optim.Adam(self.mdl.parameters(), lr=0.005, betas=(0.9, 0.999))
         self.optim = optim.Adam(self.mdl.parameters(), lr=0.0001, betas=(0.9, 0.999))
-        #self.optim = optim.SGD(self.mdl.parameters(), lr=1.e-10)
+#        self.optim = optim.SGD(self.mdl.parameters(), lr=1.e-5)
         
         self.sampler = sampler
         self.n = n
         
-        self.context = Variable(torch.FloatTensor(n, 1).zero_()) + 2.0
+        self.context = Variable(torch.FloatTensor(n, 1).zero_()) + 1.0
         self.lgd = Variable(torch.FloatTensor(n).zero_())
         self.zeros = Variable(torch.FloatTensor(n, 2).zero_())
         
@@ -59,7 +64,7 @@ class model(object):
         #import ipdb; ipdb.set_trace()
         return - losses
 
-    def train(self, total=2000):
+    def train(self, total=1500):
         
         n = self.n
        
@@ -72,13 +77,14 @@ class model(object):
             losses = - self.density(spl)
             
             loss = losses.mean()
-
-            if ((it + 1) % 1) == 0:
-                print 'Iteration: [%4d/%4d] loss: %.8f' % \
-                    (it+1, total, loss.data[0])
+#
+#            if ((it + 1) % 1) == 0:
+#                print 'Iteration: [%4d/%4d] loss: %.8f' % \
+#                    (it+1, total, loss.data[0])
             
 
             loss.backward()
+            nn.utils.clip_grad_norm(self.mdl.parameters(), 5)
             self.optim.step()
             
             if ((it + 1) % 100) == 0:
@@ -158,9 +164,9 @@ plt.xlim((-10,10))
 plt.ylim((-10,10))
 
 
-context = Variable(torch.FloatTensor(n**2, 1).zero_()) + 2.0
-lgd = Variable(torch.FloatTensor(n**2).zero_())
-zeros = Variable(torch.FloatTensor(n**2, 2).zero_())
+context = Variable(torch.FloatTensor(X.size(0), 1).zero_()) + 1.0
+lgd = Variable(torch.FloatTensor(X.size(0)).zero_())
+zeros = Variable(torch.FloatTensor(X.size(0), 2).zero_())
         
 
 
