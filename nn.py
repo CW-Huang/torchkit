@@ -265,6 +265,43 @@ class WNconv2d(_WNconvNd):
                         self.padding, self.dilation, self.groups)
 
 
+class CWNconv2d(_WNconvNd):
+
+    def __init__(self, context_features, in_channels, out_channels, 
+                 kernel_size, stride=1,
+                 padding=0, dilation=1, groups=1,
+                 mask=N_, norm=True):
+        kernel_size = _pair(kernel_size)
+        stride = _pair(stride)
+        padding = _pair(padding)
+        dilation = _pair(dilation)
+        super(CWNconv2d, self).__init__(
+            in_channels, out_channels, kernel_size, stride, padding, dilation,
+            False, _pair(0), groups, False)
+        
+        self.register_buffer('mask',mask)
+        self.norm = norm
+        self.cscale = nn.Linear(context_features, out_channels)
+        self.cbias = nn.Linear(context_features, out_channels)
+        
+    def forward(self, inputs):
+        input, context = inputs
+        scale = self.cscale(context)[:,:,N_,N_]
+        bias = self.cbias(context)[:,:,N_,N_]
+        if self.norm:
+            dir_ = self.direction
+            direction = dir_.div(
+                    dir_.pow(2).sum(1).sum(1).sum(1).sqrt()[:,N_,N_,N_])
+            weight = direction
+        else:
+            weight = self.direction
+        if self.mask is not None:
+            weight = weight * Variable(self.mask)
+        pre = F.conv2d(
+            input, weight, None, self.stride,
+            self.padding, self.dilation, self.groups)
+        return pre * scale + bias, context
+    
 
 class ResConv2d(nn.Module):
     
@@ -375,7 +412,7 @@ class Lambda(nn.Module):
 
 class SequentialFlow(nn.Sequential):
     
-    def sample(self, n=1, context=None):
+    def sample(self, n=1, context=None, **kwargs):
         dim = self[0].dim
         if isinstance(dim, int):
             dim = [dim,]
@@ -402,6 +439,15 @@ class SequentialFlow(nn.Sequential):
         return super(SequentialFlow, self).cuda()
 
 
+class ContextWrapper(nn.Module):
+    def __init__(self, module):
+        super(ContextWrapper, self).__init__()
+        self.module = module
+    
+    def forward(self, inputs):
+        input, context = inputs
+        output = self.module.forward(input)
+        return output, context
 
 
 if __name__ == '__main__':
