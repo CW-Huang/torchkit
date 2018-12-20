@@ -15,7 +15,7 @@ import torch
 from utils import bceloss
 
 tanh = nn.Tanh()
-
+print 'this is autoencoders'
 
 class MNISTConvEnc(nn.Module):
     
@@ -144,14 +144,14 @@ class BinaryPrior(nn.Module):
     
     def __init__(self, dim):
         super(BinaryPrior, self).__init__()
-        self.dim = dim
-        self.logits = Parameter(torch.zeros(dim))
+        self.dim = dim if type(dim) is not int else [dim]
+        self.logits = Parameter(torch.zeros(*self.dim))
         self.sigmoid = nn.Sigmoid()
         
     def sample(self, n):
         prob = self.sigmoid(self.logits)
         spl = Variable(
-            (torch.rand(n,self.dim).to(device=prob.device, dtype=prob.dtype) < prob).float()) * 2.0 - 1.0
+            (torch.rand(n,*self.dim).to(device=prob.device, dtype=prob.dtype) < prob).float()) * 2.0 - 1.0
         return spl
     
     def evaluate(self, z):

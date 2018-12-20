@@ -46,9 +46,10 @@ def get_rank(max_rank, num_out):
 def get_mask_from_ranks(r1, r2):
     return (r2[:, None] >= r1[None, :]).astype('float32')
 
-def get_masks_all(ds, fixed_order=False):
+def get_masks_all(ds, fixed_order=False, derank=1):
     # ds: list of dimensions dx, d1, d2, ... dh, dx, 
     #                       (2 in/output + h hidden layers)
+    # derank only used for self connection, dim > 1
     dx = ds[0]
     ms = list()
     rx = get_rank(dx, dx)
@@ -57,22 +58,23 @@ def get_masks_all(ds, fixed_order=False):
     r1 = rx
     if dx != 1:
         for d in ds[1:-1]:
-            r2 = get_rank(dx-1, d)
+            r2 = get_rank(dx-derank, d)
             ms.append(get_mask_from_ranks(r1, r2))
             r1 = r2
-        r2 = rx - 1
+        r2 = rx - derank
         ms.append(get_mask_from_ranks(r1, r2))
     else:
         ms = [np.zeros([ds[i+1],ds[i]]).astype('float32') for \
               i in range(len(ds)-1)]
-    assert np.all(np.diag(reduce(np.dot,ms[::-1])) == 0), 'wrong masks'
+    if derank==1:
+        assert np.all(np.diag(reduce(np.dot,ms[::-1])) == 0), 'wrong masks'
     
     return ms, rx
 
 
-def get_masks(dim, dh, num_layers, num_outlayers, fixed_order=False):
+def get_masks(dim, dh, num_layers, num_outlayers, fixed_order=False, derank=1):
     ms, rx = get_masks_all([dim,]+[dh for i in range(num_layers-1)]+[dim,],
-                           fixed_order)
+                           fixed_order, derank)
     ml = ms[-1]
     ml_ = (ml.transpose(1,0)[:,:,None]*([np.cast['float32'](1),] *\
                            num_outlayers)).reshape(
@@ -84,7 +86,8 @@ def get_masks(dim, dh, num_layers, num_outlayers, fixed_order=False):
 class MADE(Module):
 
     def __init__(self, dim, hid_dim, num_layers,
-                 num_outlayers=1, activation=nn.ELU(), fixed_order=False):
+                 num_outlayers=1, activation=nn.ELU(), fixed_order=False,
+                 derank=1):
         super(MADE, self).__init__()
         
         oper = nn_.WNlinear
@@ -97,7 +100,7 @@ class MADE(Module):
         
         
         ms, rx = get_masks(dim, hid_dim, num_layers, num_outlayers,
-                           fixed_order)
+                           fixed_order, derank)
         ms = [m for m in map(torch.from_numpy, ms)]
         self.rx = rx
         
@@ -132,7 +135,8 @@ class MADE(Module):
 class cMADE(Module):
 
     def __init__(self, dim, hid_dim, context_dim, num_layers,
-                 num_outlayers=1, activation=nn.ELU(), fixed_order=False):
+                 num_outlayers=1, activation=nn.ELU(), fixed_order=False,
+                 derank=1):
         super(cMADE, self).__init__()
         
         oper = nn_.CWNlinear
@@ -146,7 +150,7 @@ class cMADE(Module):
         
         
         ms, rx = get_masks(dim, hid_dim, num_layers, num_outlayers,
-                           fixed_order)
+                           fixed_order, derank)
         ms = [m for m in map(torch.from_numpy, ms)]
         self.rx = rx
         
