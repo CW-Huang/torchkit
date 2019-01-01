@@ -28,9 +28,9 @@ def load_bmnist_image(root='dataset'):
     path_tr = '{}/binarized_mnist_train.amat'.format(droot)
     path_va = '{}/binarized_mnist_valid.amat'.format(droot)
     path_te = '{}/binarized_mnist_test.amat'.format(droot)
-    train_x = np.loadtxt(path_tr).astype('float32').reshape(50000,784)
-    valid_x = np.loadtxt(path_va).astype('float32').reshape(10000,784)
-    test_x = np.loadtxt(path_te).astype('float32').reshape(10000,784)
+    train_x = np.loadtxt(path_tr).astype(floatX).reshape(50000,784)
+    valid_x = np.loadtxt(path_va).astype(floatX).reshape(10000,784)
+    test_x = np.loadtxt(path_te).astype(floatX).reshape(10000,784)
     
     
     return train_x, valid_x, test_x
@@ -46,8 +46,8 @@ def load_mnist_image(root='dataset',n_validation=1345, state=123):
     
     path_tr = '{}/train-images-idx3-ubyte'.format(droot)
     path_te = '{}/t10k-images-idx3-ubyte'.format(droot)
-    train_x = np.loadtxt(path_tr).astype('float32')
-    test_x = np.loadtxt(path_te).astype('float32')
+    train_x = np.loadtxt(path_tr).astype(floatX)
+    test_x = np.loadtxt(path_te).astype(floatX)
     
     return train_x[:50000], train_x[50000:], test_x
     
@@ -91,8 +91,8 @@ def load_omniglot_image(root='dataset',n_validation=1345, state=123):
     path = '{}/omniglot.amat'.format(droot)
     omni_raw = scipy.io.loadmat(path)
 
-    train_data = reshape_data(omni_raw['data'].T.astype('float32'))
-    test_data = reshape_data(omni_raw['testdata'].T.astype('float32'))
+    train_data = reshape_data(omni_raw['data'].T.astype(floatX))
+    test_data = reshape_data(omni_raw['testdata'].T.astype(floatX))
 
     n = train_data.shape[0]
     
@@ -102,6 +102,26 @@ def load_omniglot_image(root='dataset',n_validation=1345, state=123):
     ind_tr = np.delete(np.arange(n), ind_va)
     
     return train_data[ind_tr], train_data[ind_va], test_data
+
+
+
+def load_caltech101_image(root='dataset'):
+    # binary
+    # tr: 4100 x 28 x 28
+    # va: 2264 x 28 x 28
+    # te: 2307 x 28 x 28
+    helpers.create(root, 'caltech101')
+    droot = root+'/'+'caltech101'
+    fn = 'caltech101_silhouettes_28_split1.mat'
+    
+    if not os.path.exists('{}/{}'.format(droot, fn)):
+        from downloader import download_caltech101
+        download_caltech101(droot)
+    
+    ds = scipy.io.loadmat('{}/{}'.format(droot, fn))
+    ds = [ds['train_data'], ds['val_data'], ds['test_data']]
+    
+    return [d.astype(floatX) for d in ds]
 
 
 

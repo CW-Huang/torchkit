@@ -262,6 +262,13 @@ def download_omniglot(savedir):
     urllib.urlretrieve(url, local_filename)
     
     
+def download_caltech101(savedir):
+    url = 'https://people.cs.umass.edu/~marlin/'\
+          'data/caltech101_silhouettes_28_split1.mat'
+    local_filename = os.path.join(savedir, 
+                                  'caltech101_silhouettes_28_split1.mat')
+    urllib.urlretrieve(url, local_filename)
+
 def download_maf(savedir):
     savedir = 'external_maf/datasets'
     url = 'https://zenodo.org/record/1161203/files/data.tar.gz'
