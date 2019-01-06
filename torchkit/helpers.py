@@ -76,3 +76,18 @@ class Trainer(object):
             raise Exception('`Trainer` must have'\
                             ' instance variable `train_params`')
     
+class MultiOptim(object):
+    
+    def __init__(self, *optims):
+        self.optims = optims
+    
+    def state_dict(self):
+        return [o.state_dict() for o in self.optims]
+    
+    def load_state_dict(self, state_dicts):
+        for s, o in zip(state_dicts, self.optims):
+            o.load_state_dict(s)
+    
+    def step(self):
+        for o in self.optims:
+            o.step()
