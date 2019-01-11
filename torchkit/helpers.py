@@ -91,3 +91,12 @@ class MultiOptim(object):
     def step(self):
         for o in self.optims:
             o.step()
+            
+
+def logging(s, path=False, filename='log.txt', print_=True, log_=True):
+    if print_:
+        print(s)
+    if log_:
+        assert path, 'path is not define. path: {}'.format(path)
+        with open(os.path.join(path, filename), 'a+') as f_log:
+            f_log.write(s + '\n')
