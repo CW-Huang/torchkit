@@ -185,7 +185,36 @@ class IAF(BaseFlow):
         logdet_ = sum_from_one(torch.log(std)) + logdet
         return x_, logdet_, context
 
- 
+
+class IAF_VP(BaseFlow):
+    
+    def __init__(self, dim, hid_dim, context_dim, num_layers,
+                 activation=nn.ELU(), fixed_order=True):
+        super(IAF_VP, self).__init__()
+        
+        self.dim = dim
+        self.context_dim = context_dim
+        
+        if type(dim) is int:
+            self.mdl = iaf_modules.cMADE(
+                    dim, hid_dim, context_dim, num_layers, 1, 
+                    activation, fixed_order)
+            self.reset_parameters()
+        
+        
+    def reset_parameters(self):
+        self.mdl.hidden_to_output.cscale.weight.data.uniform_(-0.001, 0.001)
+        self.mdl.hidden_to_output.cscale.bias.data.uniform_(0.0, 0.0)
+        self.mdl.hidden_to_output.cbias.weight.data.uniform_(-0.001, 0.001)
+        self.mdl.hidden_to_output.cbias.bias.data.uniform_(0.0, 0.0)
+
+        
+    def forward(self, inputs):
+        x, logdet, context = inputs
+        out, _ = self.mdl((x, context))
+        mean = out[:,:,0]
+        x_ = mean + x
+        return x_, logdet, context
 
 
 
