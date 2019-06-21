@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 
 class model(object):
     
-    def __init__(self, sampler, n=64):
+    def __init__(self, sampler, n=64, cuda=False):
 #        self.mdl = nn_.SequentialFlow( 
 #                flows.IAF(2, 64, 1, 2), 
 #                flows.FlipFlow(1), 
@@ -36,10 +36,10 @@ class model(object):
 #                flows.IAF(2, 64, 1, 2),
 #                flows.FlipFlow(1), 
 #                flows.IAF(2, 64, 1, 2))
-#        self.mdl = flows.IAF_DDSF(2, 64, 1, 3, 
-#                num_ds_dim=2, num_ds_layers=2)
-        self.mdl = flows.IAF_DSF(2, 64, 1, 3, 
-                num_ds_dim=4)
+        self.mdl = flows.IAF_DDSF(2, 16, 1, 2,
+                num_ds_dim=16, num_ds_layers=2)
+#        self.mdl = flows.IAF_DSF(2, 64, 1, 3,
+#                num_ds_dim=4)
         
         self.optim = optim.Adam(self.mdl.parameters(), lr=0.005, 
                                 betas=(0.9, 0.999))
@@ -50,12 +50,28 @@ class model(object):
         self.context = Variable(torch.FloatTensor(n, 1).zero_()) + 2.0
         self.lgd = Variable(torch.FloatTensor(n).zero_())
         self.zeros = Variable(torch.FloatTensor(n, 2).zero_())
-        
-        
+
+
+        self.gpu = cuda
+        if self.gpu:
+            self.mdl.cuda()
+
+            self.context = self.context.cuda()
+            self.lgd = self.lgd.cuda()
+            self.zeros = self.zeros.cuda()
+
+
     def density(self, spl, lgd=None, context=None, zeros=None):
         lgd = self.lgd if lgd is None else lgd
         context = self.context if context is None else context
         zeros = self.zeros if zeros is None else zeros
+
+        if self.gpu:
+            spl = spl.cuda()
+            lgd = lgd.cuda()
+            context = context.cuda()
+            zeros = zeros.cuda()
+
         z, logdet, _ = self.mdl((spl, lgd, context))
         losses = - utils.log_normal(z, zeros, zeros+1.0).sum(1) - logdet
         return - losses
@@ -80,7 +96,7 @@ class model(object):
             
             if ((it + 1) % 100) == 0:
                 print 'Iteration: [%4d/%4d] loss: %.8f' % \
-                    (it+1, total, loss.data[0])
+                    (it+1, total, loss.item())
             
             #self.mdl.made.randomize()
 
@@ -119,21 +135,21 @@ grid = np.meshgrid(grid,grid)
 grid = np.concatenate([grid[0].reshape(nmodesperdim**2,1),
                        grid[1].reshape(nmodesperdim**2,1)],1)
 
-#mix = Mixture(
-#    np.ones(nmodesperdim**2) / float(nmodesperdim**2), 
-#    [multivariate_normal(mean, 1/float(nmodesperdim*np.log(nmodesperdim))) for mean in grid] )
+mix = Mixture(
+    np.ones(nmodesperdim**2) / float(nmodesperdim**2),
+    [multivariate_normal(mean, 1/float(nmodesperdim*np.log(nmodesperdim))) for mean in grid] )
 #mix = Mixture(
 #    [0.6, 0.4], 
 #    [multivariate_normal((2.0,2.0), 1.0), multivariate_normal((-3.0,-3.0), 0.5)])
-mix = Mixture([0.1, 0.3, 0.4, 0.2], [
-            multivariate_normal([-5., 0]),
-            multivariate_normal([5., 0]),
-            multivariate_normal([0, 5.]),
-            multivariate_normal([0, -5.])])
+# mix = Mixture([0.1, 0.3, 0.4, 0.2], [
+#             multivariate_normal([-5., 0]),
+#             multivariate_normal([5., 0]),
+#             multivariate_normal([0, 5.]),
+#             multivariate_normal([0, -5.])])
                     
-mdl = model(mix.rvs, n=64)
+mdl = model(mix.rvs, n=256, cuda=True)
 #input('x')
-mdl.train()
+mdl.train(2000)
 
 
 # plot figure
@@ -160,7 +176,7 @@ zeros = Variable(torch.FloatTensor(n**2, 2).zero_())
         
 
 ax = fig.add_subplot(1,2,2)
-Z = mdl.density(X, lgd, context, zeros).data.numpy().reshape(n,n)
+Z = mdl.density(X, lgd, context, zeros).data.cpu().numpy().reshape(n,n)
 ax.pcolormesh(xx,yy,np.exp(Z))
 ax.axis('off')
 plt.xlim((-10,10))
@@ -185,14 +201,20 @@ for j,mm in enumerate(reversed([0.0,0.2,0.4,0.6,0.8,1.0])):
     zeros = Variable(torch.FloatTensor(n**2, 2).zero_())
             
     
-    Z = mdl.density(X, lgd, context, zeros).data.numpy().reshape(n,n)
+    Z = mdl.density(X, lgd, context, zeros).data.cpu().numpy().reshape(n,n)
     ax.pcolormesh(xx,yy,np.exp(Z))
+
+    mdl.mdl.eval()
+    nspl, logdet, context = mdl.mdl.sample(10000)
+    nspl = nspl.detach().cpu().numpy()
+    ax.scatter(nspl[:,0], nspl[:,1], s=1, alpha=0.2, c='r')
+
     ax.axis('off')
     plt.xlim((-10,10))
     plt.ylim((-10,10))
-    
 
 
+plt.show()
 
 
 
