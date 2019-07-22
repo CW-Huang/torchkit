@@ -41,7 +41,7 @@ class BaseFlow(Module):
             if self.gpu:
                 spl = spl.cuda()
                 lgd = lgd.cuda()
-                context = context.gpu()
+                context = context.cuda()
         
         return self.forward((spl, lgd, context))
     

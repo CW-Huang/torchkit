@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 
 
 
-class model(object):
+class density_model(object):
     
     def __init__(self, sampler, n=64, cuda=False):
 #        self.mdl = nn_.SequentialFlow( 
@@ -101,6 +101,46 @@ class model(object):
             #self.mdl.made.randomize()
 
 
+class sampler_model(object):
+
+    def __init__(self, target_energy, batch_size, cuda=False):
+        #        self.mdl = nn_.SequentialFlow(
+        #                flows.IAF(2, 128, 1, 3),
+        #                flows.FlipFlow(1),
+        #                flows.IAF(2, 128, 1, 3),
+        #                flows.FlipFlow(1),
+        #                flows.IAF(2, 128, 1, 3))
+        self.mdl = flows.IAF_DSF(2, 64, 1, 4,  # realify=nn_.softplus,
+                                 num_ds_dim=5, num_ds_layers=2)
+
+        self.optim = optim.Adam(self.mdl.parameters(), lr=0.0005,
+                                betas=(0.9, 0.999))
+
+        self.batch_size = batch_size
+        self.target_energy = target_energy
+
+        self.gpu = cuda
+        if self.gpu:
+            self.mdl.cuda()
+
+    def train(self, total=100):
+        for it in range(total):
+
+            self.optim.zero_grad()
+
+            spl, logdet, _ = self.mdl.sample(self.batch_size)
+
+            losses = - self.target_energy(spl) - logdet
+            loss = losses.mean()
+
+            loss.backward()
+            self.optim.step()
+
+            if ((it + 1) % 100) == 0:
+                print 'Iteration: [%4d/%4d] loss: %.8f' % \
+                      (it + 1, total, loss.item())
+
+
 from scipy.stats import multivariate_normal
 
 # build and train
@@ -147,7 +187,7 @@ mix = Mixture(
 #             multivariate_normal([0, 5.]),
 #             multivariate_normal([0, -5.])])
                     
-mdl = model(mix.rvs, n=256, cuda=True)
+mdl = density_model(mix.rvs, n=256, cuda=True)
 #input('x')
 mdl.train(2000)
 
@@ -184,7 +224,8 @@ plt.ylim((-10,10))
 #plt.savefig('100MoG.pdf',format='pdf')
 
 
-
+smplr = sampler_model(mdl.density, mdl.n, cuda=True)
+smplr.train(2000)
 
 
 from ops import mollify
@@ -204,8 +245,8 @@ for j,mm in enumerate(reversed([0.0,0.2,0.4,0.6,0.8,1.0])):
     Z = mdl.density(X, lgd, context, zeros).data.cpu().numpy().reshape(n,n)
     ax.pcolormesh(xx,yy,np.exp(Z))
 
-    mdl.mdl.eval()
-    nspl, logdet, context = mdl.mdl.sample(10000)
+    smplr.mdl.eval()
+    nspl, logdet, context = smplr.mdl.sample(10000)
     nspl = nspl.detach().cpu().numpy()
     ax.scatter(nspl[:,0], nspl[:,1], s=1, alpha=0.2, c='r')
 
